@@ -20,7 +20,7 @@ final class AppModel {
         }
     }
     var immersiveOpen = false
-    var inputEnabled: Bool = UserDefaults.standard.bool(forKey: "inputEnabled") {
+    var inputEnabled: Bool = UserDefaults.standard.object(forKey: "inputEnabled") as? Bool ?? true {
         didSet { UserDefaults.standard.set(inputEnabled, forKey: "inputEnabled") }
     }
     var lastAck: RSProtocol.InputAck?

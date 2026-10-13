@@ -5,6 +5,7 @@ import java.awt.Dimension;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
 import java.util.function.Consumer;
+import lombok.extern.slf4j.Slf4j;
 import javax.swing.SwingUtilities;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
@@ -17,6 +18,7 @@ import net.runelite.client.callback.ClientThread;
  * click at the projected screen position of the tapped 3D point; nothing is queued or repeated.
  * Disabled unless the "Headset input" config option is on.
  */
+@Slf4j
 class RemoteInput
 {
 	static final long MIN_INTERVAL_MS = 100;
@@ -34,6 +36,7 @@ class RemoteInput
 	/** Called from the socket thread. {@code reply} receives the ACK bytes. */
 	void handle(Protocol.Click c, boolean enabled, Consumer<byte[]> reply)
 	{
+		log.info("headset click #{} button={} at {},{},{} enabled={}", c.seq, c.button, c.x, c.y, c.z, enabled);
 		if (!enabled)
 		{
 			reply.accept(ack(c, Protocol.ACK_DISABLED, -1, -1));
@@ -63,6 +66,7 @@ class RemoteInput
 				return;
 			}
 			java.awt.Point real = toRealCanvas(p.getX(), p.getY());
+			log.info("headset click #{} -> canvas {},{}", c.seq, real.x, real.y);
 			SwingUtilities.invokeLater(() -> dispatch(client.getCanvas(), real.x, real.y, c.button));
 			reply.accept(ack(c, Protocol.ACK_OK, p.getX(), p.getY()));
 		});
