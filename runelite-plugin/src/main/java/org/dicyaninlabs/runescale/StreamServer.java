@@ -99,7 +99,7 @@ class StreamServer extends WebSocketServer
 		{
 			for (NetworkInterface ni : Collections.list(NetworkInterface.getNetworkInterfaces()))
 			{
-				if (!ni.isUp() || ni.isLoopback() || ni.isVirtual()) continue;
+				if (!ni.isUp() || ni.isLoopback() || ni.isVirtual() || ni.isPointToPoint() || ni.getName().startsWith("utun")) continue;
 				for (InetAddress a : Collections.list(ni.getInetAddresses()))
 				{
 					if (a instanceof Inet4Address && a.isSiteLocalAddress()) return a;
