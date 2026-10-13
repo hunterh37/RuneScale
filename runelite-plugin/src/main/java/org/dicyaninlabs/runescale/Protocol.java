@@ -1,0 +1,273 @@
+package org.oldschool.runescape.runescale;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.util.ArrayList;
+import java.util.List;
+
+/** Binary wire format. See notes/PROTOCOL.md. All values little-endian. */
+public final class Protocol
+{
+	public static final int MAGIC = 0x5253; // "RS"
+	public static final int VERSION = 1;
+
+	public static final int HELLO = 1;
+	public static final int RESET = 2;
+	public static final int MESH = 3;
+	public static final int TERRAIN = 4;
+	public static final int STATIC_ADD = 5;
+	public static final int STATIC_REMOVE = 6;
+	public static final int FRAME = 7;
+
+	public static final int MESH_FLAG_TRANSIENT = 1;
+	public static final int KIND_LOCAL = 0, KIND_PLAYER = 1, KIND_NPC = 2;
+
+	private Protocol() { }
+
+	public static final class Mesh
+	{
+		public long id;
+		public int flags;
+		public short[] vertices; // x,y,z triples, OSRS model units, y down
+		public int[] indices;    // a,b,c triples
+		public int[] colors;     // rgb per face corner (3 per face)
+		public byte[] alpha;     // per face, 255 = opaque
+
+		public int faceCount() { return indices.length / 3; }
+	}
+
+	public static final class Tile
+	{
+		public int x, y, plane;
+		public int[] heights = new int[4]; // sw, se, ne, nw
+		public int[] colors = new int[4];  // rgb sw, se, ne, nw
+	}
+
+	public static final class Instance
+	{
+		public long id, meshId;
+		public int x, y, z, orientation;
+	}
+
+	public static final class Actor
+	{
+		public int key, kind, x, y, z, orientation;
+		public long meshId;
+	}
+
+	public static final class Frame
+	{
+		public int tick, playerX, playerY, playerZ, playerOrientation, cameraYaw, plane;
+		public List<Actor> actors = new ArrayList<>();
+	}
+
+	public static final class Reset
+	{
+		public int baseX, baseY, plane;
+	}
+
+	private static ByteBuffer header(int type, int body)
+	{
+		ByteBuffer b = ByteBuffer.allocate(4 + body).order(ByteOrder.LITTLE_ENDIAN);
+		b.putShort((short) MAGIC).put((byte) VERSION).put((byte) type);
+		return b;
+	}
+
+	private static void rgb(ByteBuffer b, int c)
+	{
+		b.put((byte) (c >> 16)).put((byte) (c >> 8)).put((byte) c);
+	}
+
+	private static int rgb(ByteBuffer b)
+	{
+		return ((b.get() & 0xFF) << 16) | ((b.get() & 0xFF) << 8) | (b.get() & 0xFF);
+	}
+
+	public static byte[] hello(int radius)
+	{
+		return header(HELLO, 4).putInt(radius).array();
+	}
+
+	public static byte[] reset(Reset r)
+	{
+		return header(RESET, 9).putInt(r.baseX).putInt(r.baseY).put((byte) r.plane).array();
+	}
+
+	public static byte[] mesh(Mesh m)
+	{
+		int v = m.vertices.length / 3, f = m.faceCount();
+		ByteBuffer b = header(MESH, 8 + 1 + 4 + 4 + v * 6 + f * 6 + f * 9 + f);
+		b.putLong(m.id).put((byte) m.flags).putInt(v).putInt(f);
+		for (short s : m.vertices) b.putShort(s);
+		for (int i : m.indices) b.putShort((short) i);
+		for (int c : m.colors) rgb(b, c);
+		b.put(m.alpha);
+		return b.array();
+	}
+
+	public static byte[] terrain(List<Tile> tiles)
+	{
+		ByteBuffer b = header(TERRAIN, 4 + tiles.size() * (3 + 16 + 12));
+		b.putInt(tiles.size());
+		for (Tile t : tiles)
+		{
+			b.put((byte) t.x).put((byte) t.y).put((byte) t.plane);
+			for (int h : t.heights) b.putInt(h);
+			for (int c : t.colors) rgb(b, c);
+		}
+		return b.array();
+	}
+
+	public static byte[] staticAdd(List<Instance> list)
+	{
+		ByteBuffer b = header(STATIC_ADD, 4 + list.size() * 30);
+		b.putInt(list.size());
+		for (Instance i : list)
+		{
+			b.putLong(i.id).putLong(i.meshId).putInt(i.x).putInt(i.y).putInt(i.z).putShort((short) i.orientation);
+		}
+		return b.array();
+	}
+
+	public static byte[] staticRemove(List<Long> ids)
+	{
+		ByteBuffer b = header(STATIC_REMOVE, 4 + ids.size() * 8);
+		b.putInt(ids.size());
+		for (long id : ids) b.putLong(id);
+		return b.array();
+	}
+
+	public static byte[] frame(Frame f)
+	{
+		ByteBuffer b = header(FRAME, 4 + 12 + 2 + 2 + 1 + 4 + f.actors.size() * 27);
+		b.putInt(f.tick).putInt(f.playerX).putInt(f.playerY).putInt(f.playerZ)
+			.putShort((short) f.playerOrientation).putShort((short) f.cameraYaw).put((byte) f.plane);
+		b.putInt(f.actors.size());
+		for (Actor a : f.actors)
+		{
+			b.putInt(a.key).put((byte) a.kind).putInt(a.x).putInt(a.y).putInt(a.z)
+				.putShort((short) a.orientation).putLong(a.meshId);
+		}
+		return b.array();
+	}
+
+	/** Decoded message: type plus one populated payload. Used by tests and tooling. */
+	public static final class Decoded
+	{
+		public int type;
+		public int radius;
+		public Reset reset;
+		public Mesh mesh;
+		public List<Tile> tiles;
+		public List<Instance> instances;
+		public List<Long> removed;
+		public Frame frame;
+	}
+
+	public static Decoded decode(byte[] data)
+	{
+		ByteBuffer b = ByteBuffer.wrap(data).order(ByteOrder.LITTLE_ENDIAN);
+		if ((b.getShort() & 0xFFFF) != MAGIC) throw new IllegalArgumentException("bad magic");
+		if ((b.get() & 0xFF) != VERSION) throw new IllegalArgumentException("bad version");
+		Decoded d = new Decoded();
+		d.type = b.get() & 0xFF;
+		switch (d.type)
+		{
+			case HELLO:
+				d.radius = b.getInt();
+				break;
+			case RESET:
+				d.reset = new Reset();
+				d.reset.baseX = b.getInt();
+				d.reset.baseY = b.getInt();
+				d.reset.plane = b.get() & 0xFF;
+				break;
+			case MESH:
+			{
+				Mesh m = new Mesh();
+				m.id = b.getLong();
+				m.flags = b.get() & 0xFF;
+				int v = b.getInt(), f = b.getInt();
+				m.vertices = new short[v * 3];
+				for (int i = 0; i < m.vertices.length; i++) m.vertices[i] = b.getShort();
+				m.indices = new int[f * 3];
+				for (int i = 0; i < m.indices.length; i++) m.indices[i] = b.getShort() & 0xFFFF;
+				m.colors = new int[f * 3];
+				for (int i = 0; i < m.colors.length; i++) m.colors[i] = rgb(b);
+				m.alpha = new byte[f];
+				b.get(m.alpha);
+				d.mesh = m;
+				break;
+			}
+			case TERRAIN:
+			{
+				int n = b.getInt();
+				d.tiles = new ArrayList<>(n);
+				for (int i = 0; i < n; i++)
+				{
+					Tile t = new Tile();
+					t.x = b.get() & 0xFF;
+					t.y = b.get() & 0xFF;
+					t.plane = b.get() & 0xFF;
+					for (int k = 0; k < 4; k++) t.heights[k] = b.getInt();
+					for (int k = 0; k < 4; k++) t.colors[k] = rgb(b);
+					d.tiles.add(t);
+				}
+				break;
+			}
+			case STATIC_ADD:
+			{
+				int n = b.getInt();
+				d.instances = new ArrayList<>(n);
+				for (int i = 0; i < n; i++)
+				{
+					Instance in = new Instance();
+					in.id = b.getLong();
+					in.meshId = b.getLong();
+					in.x = b.getInt();
+					in.y = b.getInt();
+					in.z = b.getInt();
+					in.orientation = b.getShort() & 0xFFFF;
+					d.instances.add(in);
+				}
+				break;
+			}
+			case STATIC_REMOVE:
+			{
+				int n = b.getInt();
+				d.removed = new ArrayList<>(n);
+				for (int i = 0; i < n; i++) d.removed.add(b.getLong());
+				break;
+			}
+			case FRAME:
+			{
+				Frame f = new Frame();
+				f.tick = b.getInt();
+				f.playerX = b.getInt();
+				f.playerY = b.getInt();
+				f.playerZ = b.getInt();
+				f.playerOrientation = b.getShort() & 0xFFFF;
+				f.cameraYaw = b.getShort() & 0xFFFF;
+				f.plane = b.get() & 0xFF;
+				int n = b.getInt();
+				for (int i = 0; i < n; i++)
+				{
+					Actor a = new Actor();
+					a.key = b.getInt();
+					a.kind = b.get() & 0xFF;
+					a.x = b.getInt();
+					a.y = b.getInt();
+					a.z = b.getInt();
+					a.orientation = b.getShort() & 0xFFFF;
+					a.meshId = b.getLong();
+					f.actors.add(a);
+				}
+				d.frame = f;
+				break;
+			}
+			default:
+				throw new IllegalArgumentException("unknown type " + d.type);
+		}
+		return d;
+	}
+}

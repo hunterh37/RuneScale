@@ -1,0 +1,59 @@
+name: RuneScaleVision
+options:
+  bundleIdPrefix: org.oldschool.runescape
+  deploymentTarget:
+    visionOS: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+targets:
+  RuneScaleCore:
+    type: framework
+    platform: visionOS
+    sources: [Core]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.oldschool.runescape.runescale.core
+        GENERATE_INFOPLIST_FILE: YES
+  RuneScale:
+    type: application
+    platform: visionOS
+    sources: [App]
+    dependencies:
+      - target: RuneScaleCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.oldschool.runescape.runescale
+        PRODUCT_NAME: RuneScale
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: RuneScale
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: RuneScale connects to the RuneScale Stream plugin running in RuneLite on your Mac.
+    info:
+      path: App/Info.plist
+      properties:
+        NSBonjourServices: [_runescale._tcp]
+        NSLocalNetworkUsageDescription: RuneScale connects to the RuneScale Stream plugin running in RuneLite on your Mac.
+        UIApplicationSceneManifest:
+          UIApplicationPreferredDefaultSceneSessionRole: UIWindowSceneSessionRoleApplication
+          UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations: {}
+  RuneScaleCoreTests:
+    type: bundle.unit-test
+    platform: visionOS
+    sources: [Tests]
+    dependencies:
+      - target: RuneScaleCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.oldschool.runescape.runescale.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  RuneScale:
+    build:
+      targets:
+        RuneScale: all
+        RuneScaleCore: all
+    test:
+      targets: [RuneScaleCoreTests]
