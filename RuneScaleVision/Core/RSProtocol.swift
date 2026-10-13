@@ -53,6 +53,31 @@ public enum RSProtocol {
         case staticAdd([Instance])
         case staticRemove([Int64])
         case frame(Frame)
+        case inputAck(InputAck)
+    }
+
+    public enum Button: UInt8, Sendable { case left = 0, right = 1 }
+
+    public enum AckResult: UInt8, Sendable {
+        case ok = 0, disabled = 1, offscreen = 2, rateLimited = 3, notLoggedIn = 4, unknown = 255
+    }
+
+    public struct InputAck: Sendable, Equatable {
+        public var seq: UInt32
+        public var result: AckResult
+        public var canvasX: Int32, canvasY: Int32
+    }
+
+    /// Headset to plugin: click at a scene-local point (units, OSRS axes: x east, y height down, z north).
+    public static func encodeClick(seq: UInt32, button: Button, x: Int32, y: Int32, z: Int32) -> Data {
+        var w = [UInt8]()
+        w.reserveCapacity(21)
+        func put32(_ v: UInt32) { for i in 0..<4 { w.append(UInt8((v >> (8 * UInt32(i))) & 0xFF)) } }
+        w += [0x53, 0x52, version, 64]
+        put32(seq)
+        w.append(button.rawValue)
+        put32(UInt32(bitPattern: x)); put32(UInt32(bitPattern: y)); put32(UInt32(bitPattern: z))
+        return Data(w)
     }
 
     public enum DecodeError: Error, Equatable {
@@ -116,6 +141,10 @@ public enum RSProtocol {
                 actors.append(Actor(key: key, kind: kind, x: try r.i32(), y: try r.i32(), z: try r.i32(), orientation: try r.u16(), meshId: try r.i64()))
             }
             return .frame(Frame(tick: tick, playerX: px, playerY: py, playerZ: pz, playerOrientation: po, cameraYaw: yaw, plane: plane, actors: actors))
+        case 8:
+            let seq = try r.u32()
+            let res = AckResult(rawValue: try r.u8()) ?? .unknown
+            return .inputAck(InputAck(seq: seq, result: res, canvasX: try r.i32(), canvasY: try r.i32()))
         default:
             throw DecodeError.unknownType(type)
         }

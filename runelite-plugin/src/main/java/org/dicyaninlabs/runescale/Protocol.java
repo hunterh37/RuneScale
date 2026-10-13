@@ -18,6 +18,12 @@ public final class Protocol
 	public static final int STATIC_ADD = 5;
 	public static final int STATIC_REMOVE = 6;
 	public static final int FRAME = 7;
+	public static final int INPUT_ACK = 8;
+	/** Headset to plugin. Only accepted when remote input is enabled. */
+	public static final int CLICK = 64;
+
+	public static final int BUTTON_LEFT = 0, BUTTON_RIGHT = 1;
+	public static final int ACK_OK = 0, ACK_DISABLED = 1, ACK_OFFSCREEN = 2, ACK_RATE_LIMITED = 3, ACK_NOT_LOGGED_IN = 4;
 
 	public static final int MESH_FLAG_TRANSIENT = 1;
 	public static final int KIND_LOCAL = 0, KIND_PLAYER = 1, KIND_NPC = 2;
@@ -64,6 +70,17 @@ public final class Protocol
 	public static final class Reset
 	{
 		public int baseX, baseY, plane;
+	}
+
+	/** Click at a scene-local 3D point (same units as FRAME). The plugin projects it to the canvas. */
+	public static final class Click
+	{
+		public int seq, button, x, y, z;
+	}
+
+	public static final class Ack
+	{
+		public int seq, result, canvasX, canvasY;
 	}
 
 	private static ByteBuffer header(int type, int body)
@@ -151,6 +168,16 @@ public final class Protocol
 		return b.array();
 	}
 
+	public static byte[] click(Click c)
+	{
+		return header(CLICK, 4 + 1 + 12).putInt(c.seq).put((byte) c.button).putInt(c.x).putInt(c.y).putInt(c.z).array();
+	}
+
+	public static byte[] ack(Ack a)
+	{
+		return header(INPUT_ACK, 4 + 1 + 8).putInt(a.seq).put((byte) a.result).putInt(a.canvasX).putInt(a.canvasY).array();
+	}
+
 	/** Decoded message: type plus one populated payload. Used by tests and tooling. */
 	public static final class Decoded
 	{
@@ -162,6 +189,8 @@ public final class Protocol
 		public List<Instance> instances;
 		public List<Long> removed;
 		public Frame frame;
+		public Click click;
+		public Ack ack;
 	}
 
 	public static Decoded decode(byte[] data)
@@ -263,6 +292,28 @@ public final class Protocol
 					f.actors.add(a);
 				}
 				d.frame = f;
+				break;
+			}
+			case CLICK:
+			{
+				if (b.remaining() < 17) throw new IllegalArgumentException("truncated click");
+				Click c = new Click();
+				c.seq = b.getInt();
+				c.button = b.get() & 0xFF;
+				c.x = b.getInt();
+				c.y = b.getInt();
+				c.z = b.getInt();
+				d.click = c;
+				break;
+			}
+			case INPUT_ACK:
+			{
+				Ack a = new Ack();
+				a.seq = b.getInt();
+				a.result = b.get() & 0xFF;
+				a.canvasX = b.getInt();
+				a.canvasY = b.getInt();
+				d.ack = a;
 				break;
 			}
 			default:

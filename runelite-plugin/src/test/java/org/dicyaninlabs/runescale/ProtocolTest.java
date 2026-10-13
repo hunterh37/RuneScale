@@ -78,4 +78,41 @@ public class ProtocolTest
 		int white = JagexColor.toRgb(127);
 		assertEquals(true, (white & 0xFF) > 240 && ((white >> 16) & 0xFF) > 240);
 	}
+
+	@Test
+	public void clickAndAckRoundTrip()
+	{
+		Protocol.Click c = new Protocol.Click();
+		c.seq = 7; c.button = Protocol.BUTTON_RIGHT; c.x = 6464; c.y = -312; c.z = 6592;
+		Protocol.Decoded d = Protocol.decode(Protocol.click(c));
+		assertEquals(Protocol.CLICK, d.type);
+		assertEquals(7, d.click.seq);
+		assertEquals(Protocol.BUTTON_RIGHT, d.click.button);
+		assertEquals(6464, d.click.x);
+		assertEquals(-312, d.click.y);
+		assertEquals(6592, d.click.z);
+
+		Protocol.Ack a = new Protocol.Ack();
+		a.seq = 7; a.result = Protocol.ACK_OFFSCREEN; a.canvasX = -1; a.canvasY = 300;
+		Protocol.Decoded da = Protocol.decode(Protocol.ack(a));
+		assertEquals(Protocol.INPUT_ACK, da.type);
+		assertEquals(Protocol.ACK_OFFSCREEN, da.ack.result);
+		assertEquals(-1, da.ack.canvasX);
+		assertEquals(300, da.ack.canvasY);
+	}
+
+	@Test(expected = IllegalArgumentException.class)
+	public void truncatedClickRejected()
+	{
+		byte[] full = Protocol.click(new Protocol.Click());
+		Protocol.decode(Arrays.copyOf(full, full.length - 3));
+	}
+
+	@Test
+	public void stretchedScaling()
+	{
+		java.awt.Point p = RemoteInput.scale(383, 251, new java.awt.Dimension(765, 503), new java.awt.Dimension(1530, 1006));
+		assertEquals(766, p.x);
+		assertEquals(502, p.y);
+	}
 }

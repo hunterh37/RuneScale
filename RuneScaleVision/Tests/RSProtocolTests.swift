@@ -75,4 +75,27 @@ final class RSProtocolTests: XCTestCase {
         XCTAssertLessThan(uv.y, 0.01)
         XCTAssertEqual(Coordinates.yaw(orientation: 512), -.pi / 2, accuracy: 1e-5)
     }
+
+    func testClickEncodingLayout() {
+        let d = RSProtocol.encodeClick(seq: 0x01020304, button: .right, x: 6464, y: -312, z: -1)
+        XCTAssertEqual(d.count, 21)
+        XCTAssertEqual(Array(d.prefix(4)), [0x53, 0x52, 1, 64])
+        XCTAssertEqual(Array(d[4..<8]), [4, 3, 2, 1])
+        XCTAssertEqual(d[8], 1)
+        XCTAssertEqual(Array(d[9..<13]), [0x40, 0x19, 0, 0])
+        XCTAssertEqual(Array(d[17..<21]), [0xFF, 0xFF, 0xFF, 0xFF])
+    }
+
+    func testAckDecode() throws {
+        let bytes: [UInt8] = [0x53, 0x52, 1, 8, 7, 0, 0, 0, 2, 0xFF, 0xFF, 0xFF, 0xFF, 0x2C, 1, 0, 0]
+        XCTAssertEqual(try RSProtocol.decode(Data(bytes)),
+                       .inputAck(.init(seq: 7, result: .offscreen, canvasX: -1, canvasY: 300)))
+    }
+
+    func testUnitsInvertsPoint() {
+        let s: Float = 1 / 128
+        let p = Coordinates.point(x: 6464, y: -312, z: 6592, metersPerUnit: s)
+        let u = Coordinates.units(p, metersPerUnit: s)
+        XCTAssertEqual(u.x, 6464); XCTAssertEqual(u.y, -312); XCTAssertEqual(u.z, 6592)
+    }
 }

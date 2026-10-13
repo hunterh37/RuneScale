@@ -1,6 +1,6 @@
 # RuneScale Stream protocol v1
 
-Transport: WebSocket, binary frames, one message per frame. Server to headset only.
+Transport: WebSocket, binary frames, one message per frame. Types 1-8 plugin to headset; 64 headset to plugin.
 Connect to `ws://<mac-ip>:43595/?token=<6 digits>` or send header `X-RuneScale-Token`.
 Bonjour type `_runescale._tcp`. All integers little-endian.
 
@@ -14,6 +14,8 @@ Header (4 bytes): `u16 magic 0x5253`, `u8 version 1`, `u8 type`.
 | 4 | TERRAIN | `u32 n`, n x (`u8 sceneX, u8 sceneY, u8 plane, 4 x i32 height (sw,se,ne,nw), 4 x rgb`) |
 | 5 | STATIC_ADD | `u32 n`, n x (`i64 instanceId, i64 meshId, i32 x, i32 height, i32 z, u16 orientation`) |
 | 6 | STATIC_REMOVE | `u32 n`, n x `i64 instanceId` |
+| 8 | INPUT_ACK | `u32 seq, u8 result (0 ok, 1 input disabled, 2 offscreen, 3 rate limited, 4 not logged in), i32 canvasX, i32 canvasY` |
+| 64 | CLICK (headset to plugin) | `u32 seq, u8 button (0 left, 1 right), i32 x, i32 height, i32 z` scene-local units |
 | 7 | FRAME | `u32 tick, i32 px, i32 pheight, i32 pz, u16 playerOrientation, u16 cameraYaw, u8 plane, u32 n`, n x (`u32 key, u8 kind (0 local,1 player,2 npc), i32 x, i32 height, i32 z, u16 orientation, i64 meshId`) |
 
 Coordinates are scene-local units (128 per tile). x east, z north, height positive downward
@@ -28,3 +30,7 @@ Cadence: HELLO + RESET + full scene on each new connection; static diff every N 
 
 Headset mapping: RealityKit = (x, -height, -z) / 128 meters per tile at life size 1.0.
 Orientation o maps to yaw `-o * 2pi / 2048` about +Y. Winding is preserved (180 degree turn about X).
+
+Input: CLICK is accepted only when the plugin option Headset input is on. The plugin projects the
+point with `Perspective.localToCanvas`, drops it if outside the viewport, and dispatches one
+press/release/click on the canvas. Minimum 100 ms between clicks. Every CLICK gets one INPUT_ACK.

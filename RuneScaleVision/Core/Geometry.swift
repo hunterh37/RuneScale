@@ -55,6 +55,11 @@ public enum Coordinates {
         SIMD3(x * s, -y * s, -z * s)
     }
 
+    /// Inverse of `point`: RealityKit meters back to OSRS scene units.
+    public static func units(_ p: SIMD3<Float>, metersPerUnit s: Float) -> (x: Int32, y: Int32, z: Int32) {
+        (Int32((p.x / s).rounded()), Int32((-p.y / s).rounded()), Int32((-p.z / s).rounded()))
+    }
+
     /// OSRS orientation (0..2047) to a RealityKit yaw in radians about +Y.
     public static func yaw(orientation: UInt16) -> Float {
         -Float(orientation & 2047) * (2 * .pi / 2048)

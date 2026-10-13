@@ -25,6 +25,11 @@ public interface RuneScaleConfig extends Config
 	@ConfigItem(keyName = "bonjour", name = "Advertise via Bonjour", description = "Publish _runescale._tcp on the local network", position = 4)
 	default boolean bonjour() { return true; }
 
+	@ConfigItem(keyName = "remoteInput", name = "Headset input",
+		description = "Let the paired headset click in the game view (one tap = one click). Developer mode only; not Plugin Hub compliant.",
+		position = 5, warning = "Headset taps will send real mouse clicks to the game. Plugins that send input are not allowed on the Plugin Hub. Enable?")
+	default boolean remoteInput() { return false; }
+
 	@ConfigItem(keyName = "token", name = "", description = "", hidden = true)
 	default String token() { return ""; }
 }

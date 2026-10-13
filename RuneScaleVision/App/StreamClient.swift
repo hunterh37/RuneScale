@@ -3,7 +3,7 @@ import Network
 import Observation
 import RuneScaleCore
 
-/// Receive-only WebSocket client. Nothing is ever sent to the plugin besides the handshake.
+/// WebSocket client. Receives the scene stream; sends CLICK messages for headset input.
 @MainActor
 @Observable
 final class StreamClient {
@@ -75,6 +75,13 @@ final class StreamClient {
         connection?.cancel()
         connection = nil
         status = .idle
+    }
+
+    func send(_ data: Data) {
+        guard let connection, isConnected else { return }
+        let meta = NWProtocolWebSocket.Metadata(opcode: .binary)
+        let ctx = NWConnection.ContentContext(identifier: "click", metadata: [meta])
+        connection.send(content: data, contentContext: ctx, isComplete: true, completion: .idempotent)
     }
 
     nonisolated private func receive(on conn: NWConnection) {

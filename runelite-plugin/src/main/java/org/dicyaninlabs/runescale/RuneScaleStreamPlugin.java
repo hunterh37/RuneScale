@@ -15,6 +15,7 @@ import net.runelite.api.GameState;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ConfigChanged;
@@ -25,12 +26,13 @@ import net.runelite.client.ui.NavigationButton;
 
 /**
  * Streams nearby scene geometry to a paired headset on the LAN.
- * Read-only: no menu entries, no input, no client state mutation.
+ * No menu entries or client state mutation. Headset taps become canvas clicks only when
+ * the "Headset input" option is on (off by default).
  */
 @Slf4j
 @PluginDescriptor(
 	name = "RuneScale Stream",
-	description = "Read-only local stream of nearby scene geometry for a Vision Pro viewer",
+	description = "Local stream of nearby scene geometry to a Vision Pro viewer, optional headset clicks",
 	tags = {"vr", "ar", "vision", "3d"}
 )
 public class RuneScaleStreamPlugin extends Plugin
@@ -39,8 +41,10 @@ public class RuneScaleStreamPlugin extends Plugin
 	@Inject private RuneScaleConfig config;
 	@Inject private ConfigManager configManager;
 	@Inject private ClientToolbar clientToolbar;
+	@Inject private ClientThread clientThread;
 
 	private SceneCapture capture;
+	private RemoteInput input;
 	private StreamServer server;
 	private JmDNS jmdns;
 	private RuneScalePanel panel;
@@ -65,6 +69,7 @@ public class RuneScaleStreamPlugin extends Plugin
 			configManager.setConfiguration(RuneScaleConfig.GROUP, "token", token);
 		}
 		capture = new SceneCapture(client);
+		input = new RemoteInput(client, clientThread);
 		panel = new RuneScalePanel();
 		navButton = NavigationButton.builder().tooltip("RuneScale Stream").icon(icon()).priority(9).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
@@ -82,7 +87,8 @@ public class RuneScaleStreamPlugin extends Plugin
 	private void startServer()
 	{
 		int port = config.port();
-		server = new StreamServer(port, token, this::refreshPanel);
+		server = new StreamServer(port, token, this::refreshPanel,
+			(click, reply) -> input.handle(click, config.remoteInput(), reply));
 		server.start();
 		InetAddress lan = StreamServer.lanAddress();
 		if (config.bonjour())

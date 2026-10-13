@@ -17,7 +17,7 @@
 ## Design inside the rules
 
 - Read-only: the plugin calls getters on the client thread, never mutates client state, adds no menu entries, sends no input, draws no overlays.
-- The headset sends nothing back. `StreamServer.onMessage` ignores inbound data. The visionOS client never writes to the socket.
+- Headset input (M1, notes/ROADMAP.md): off by default behind the `remoteInput` option. With it on, each headset tap becomes one canvas click. This is input from outside the client and is not Plugin Hub compliant; developer mode only.
 - Information shown is what the game already renders around the player at the same radius. No hidden information (no projectile prediction, no indicators).
 - LAN only: connections from non-local addresses are closed; pairing token required. Personal use.
 

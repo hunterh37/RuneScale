@@ -20,12 +20,19 @@ final class AppModel {
         }
     }
     var immersiveOpen = false
+    var inputEnabled: Bool = UserDefaults.standard.bool(forKey: "inputEnabled") {
+        didSet { UserDefaults.standard.set(inputEnabled, forKey: "inputEnabled") }
+    }
+    var lastAck: RSProtocol.InputAck?
+    private var clickSeq: UInt32 = 0
 
     private var scenes: [WorldScene] = []
 
     init() {
         client.onMessage = { [weak self] msg in
-            self?.scenes.forEach { $0.apply(msg) }
+            guard let self else { return }
+            if case .inputAck(let a) = msg { self.lastAck = a; return }
+            self.scenes.forEach { $0.apply(msg) }
         }
         browser.start()
     }
@@ -38,6 +45,13 @@ final class AppModel {
 
     func unregister(_ scene: WorldScene) {
         scenes.removeAll { $0 === scene }
+    }
+
+    /// One tap = one click at a scene-local point (OSRS units).
+    func click(_ p: (x: Int32, y: Int32, z: Int32), button: RSProtocol.Button) {
+        guard inputEnabled, client.isConnected else { return }
+        clickSeq &+= 1
+        client.send(RSProtocol.encodeClick(seq: clickSeq, button: button, x: p.x, y: p.y, z: p.z))
     }
 
     func connectManual() {

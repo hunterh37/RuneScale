@@ -11,7 +11,8 @@ final class WorldScene {
     enum Mode { case roomScale, tabletop }
 
     let root = Entity()
-    private let world = Entity()
+    /// Parent of all scene geometry; its local space is scene-local meters (1 tile = 1 m).
+    let world = Entity()
     private let mode: Mode
     private weak var model: AppModel?
     private static let metersPerUnit: Float = 1 / Coordinates.unitsPerTile
@@ -66,6 +67,7 @@ final class WorldScene {
                 let e = ModelEntity(mesh: res, materials: [material])
                 world.addChild(e)
                 terrain.append(e)
+                Self.makeTappable(e, exact: res)
             }
         case .staticAdd(let list):
             for inst in list { placeStatic(inst) }
@@ -73,6 +75,8 @@ final class WorldScene {
             for id in ids { statics.removeValue(forKey: id)?.removeFromParent() }
         case .frame(let f):
             applyFrame(f)
+        case .inputAck:
+            break
         }
     }
 
@@ -102,6 +106,7 @@ final class WorldScene {
         }
         world.addChild(e)
         statics[inst.id] = e
+        if inst.id < 0 { Self.makeTappable(e, exact: res) } else { Self.makeTappable(e, bounds: res) }
     }
 
     private func applyFrame(_ f: RSProtocol.Frame) {
@@ -130,11 +135,30 @@ final class WorldScene {
                 e.transform = t
                 world.addChild(e)
                 actors[a.key] = e
+                Self.makeTappable(e, bounds: res)
             }
         }
         for (key, e) in actors where !seen.contains(key) {
             e.removeFromParent()
             actors.removeValue(forKey: key)
+        }
+    }
+
+    /// Box collider from mesh bounds: cheap, used for objects and actors.
+    private static func makeTappable(_ e: ModelEntity, bounds res: MeshResource) {
+        let b = res.bounds
+        guard b.extents.x > 0 || b.extents.y > 0 || b.extents.z > 0 else { return }
+        let size = simd_max(b.extents, SIMD3(repeating: 0.05))
+        e.components.set(CollisionComponent(shapes: [.generateBox(size: size).offsetBy(translation: b.center)], isStatic: true))
+        e.components.set(InputTargetComponent())
+    }
+
+    /// Exact triangle collider for terrain, built off the main actor.
+    private static func makeTappable(_ e: ModelEntity, exact res: MeshResource) {
+        e.components.set(InputTargetComponent())
+        Task { @MainActor [weak e] in
+            guard let shape = try? await ShapeResource.generateStaticMesh(from: res), let e else { return }
+            e.components.set(CollisionComponent(shapes: [shape], isStatic: true))
         }
     }
 

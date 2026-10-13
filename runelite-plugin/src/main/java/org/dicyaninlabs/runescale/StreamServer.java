@@ -4,6 +4,9 @@ import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
+import java.nio.ByteBuffer;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
 import lombok.extern.slf4j.Slf4j;
@@ -12,8 +15,8 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 /**
- * LAN-only WebSocket server. Outbound only: inbound messages from clients are ignored,
- * so nothing a headset sends can reach the game client.
+ * LAN-only WebSocket server. Inbound binary CLICK messages are passed to {@code onClick};
+ * the plugin drops them unless headset input is enabled. Everything else inbound is ignored.
  */
 @Slf4j
 class StreamServer extends WebSocketServer
@@ -21,10 +24,12 @@ class StreamServer extends WebSocketServer
 	private final String token;
 	private final AtomicBoolean resyncRequested = new AtomicBoolean();
 	private final Runnable onChange;
+	private final BiConsumer<Protocol.Click, Consumer<byte[]>> onClick;
 
-	StreamServer(int port, String token, Runnable onChange)
+	StreamServer(int port, String token, Runnable onChange, BiConsumer<Protocol.Click, Consumer<byte[]>> onClick)
 	{
 		super(new InetSocketAddress(port));
+		this.onClick = onClick;
 		this.token = token;
 		this.onChange = onChange;
 		setReuseAddr(true);
@@ -78,7 +83,28 @@ class StreamServer extends WebSocketServer
 	@Override
 	public void onMessage(WebSocket conn, String message)
 	{
-		// read-only stream: ignore
+		// text frames are not part of the protocol
+	}
+
+	@Override
+	public void onMessage(WebSocket conn, ByteBuffer message)
+	{
+		byte[] data = new byte[message.remaining()];
+		message.get(data);
+		Protocol.Decoded d;
+		try
+		{
+			d = Protocol.decode(data);
+		}
+		catch (RuntimeException e)
+		{
+			return;
+		}
+		if (d.type != Protocol.CLICK) return;
+		onClick.accept(d.click, bytes ->
+		{
+			if (conn.isOpen()) conn.send(bytes);
+		});
 	}
 
 	@Override
