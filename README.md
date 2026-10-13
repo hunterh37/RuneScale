@@ -4,6 +4,9 @@ Room-scale Old School RuneScape viewer for Apple Vision Pro. Mirrors the live sc
 own RuneLite client on your Mac. Optional headset input (tap to click, off by default). No game assets are shipped; geometry is streamed
 from the running client over the local network.
 
+![RuneScale on Vision Pro](docs/images/screenshot-1.png)
+![RuneScale on Vision Pro](docs/images/screenshot-2.png)
+
 - `runelite-plugin/`: RuneLite plugin "RuneScale Stream" (Java 11, Gradle).
 - `RuneScaleVision/`: visionOS app (XcodeGen, SwiftUI, RealityKit).
 - `notes/RESEARCH.md`: rules, prior art, risk. `notes/PROTOCOL.md`: wire format. `notes/ROADMAP.md`: plan.
