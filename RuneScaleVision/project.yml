@@ -6,7 +6,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: NWR2UZ4V67
     CODE_SIGN_STYLE: Automatic
 targets:
   RuneScaleCore:
