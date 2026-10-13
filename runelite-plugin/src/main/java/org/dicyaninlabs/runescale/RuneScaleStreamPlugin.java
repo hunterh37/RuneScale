@@ -22,6 +22,7 @@ import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.NavigationButton;
 
 /**
@@ -42,9 +43,11 @@ public class RuneScaleStreamPlugin extends Plugin
 	@Inject private ConfigManager configManager;
 	@Inject private ClientToolbar clientToolbar;
 	@Inject private ClientThread clientThread;
+	@Inject private DrawManager drawManager;
 
 	private SceneCapture capture;
 	private RemoteInput input;
+	private InterfaceCapture ui;
 	private StreamServer server;
 	private JmDNS jmdns;
 	private RuneScalePanel panel;
@@ -70,6 +73,7 @@ public class RuneScaleStreamPlugin extends Plugin
 		}
 		capture = new SceneCapture(client);
 		input = new RemoteInput(client, clientThread);
+		ui = new InterfaceCapture(client, drawManager);
 		panel = new RuneScalePanel();
 		navButton = NavigationButton.builder().tooltip("RuneScale Stream").icon(icon()).priority(9).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
@@ -81,6 +85,8 @@ public class RuneScaleStreamPlugin extends Plugin
 	{
 		stopServer();
 		clientToolbar.removeNavigation(navButton);
+		if (ui != null) ui.shutdown();
+		ui = null;
 		capture = null;
 	}
 
@@ -88,7 +94,8 @@ public class RuneScaleStreamPlugin extends Plugin
 	{
 		int port = config.port();
 		server = new StreamServer(port, token, this::refreshPanel,
-			(click, reply) -> input.handle(click, config.remoteInput(), reply));
+			(click, reply) -> input.handle(click, config.remoteInput(), reply),
+			(click, reply) -> input.handleUi(click, config.remoteInput(), reply));
 		server.start();
 		InetAddress lan = StreamServer.lanAddress();
 		if (config.bonjour())
@@ -168,8 +175,10 @@ public class RuneScaleStreamPlugin extends Plugin
 	@Subscribe
 	public void onClientTick(ClientTick e)
 	{
+		if (server == null || capture == null || server.clientCount() == 0) return;
+		if (ui != null && config.streamInterface()) ui.tick(config.interfaceFps(), config.interfaceWidth(), server::broadcast);
 		// ~25 Hz actor frames (client ticks run at 50 Hz)
-		if (server == null || capture == null || server.clientCount() == 0 || (++clientTicks & 1) != 0) return;
+		if ((++clientTicks & 1) != 0) return;
 		capture.captureFrame(config.radius(), server::broadcast);
 	}
 

@@ -1,4 +1,6 @@
 import Foundation
+import CoreGraphics
+import ImageIO
 import Observation
 import RuneScaleCore
 
@@ -24,6 +26,15 @@ final class AppModel {
         didSet { UserDefaults.standard.set(inputEnabled, forKey: "inputEnabled") }
     }
     var lastAck: RSProtocol.InputAck?
+    /// Mirrored client canvas (all tabs, chat, minimap, dialogs) from UI_FRAME.
+    var interfaceImage: CGImage?
+    var canvasSize = CGSize(width: 765, height: 503)
+    var interfaceFrames = 0
+    var showInterface: Bool = UserDefaults.standard.object(forKey: "showInterface") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showInterface, forKey: "showInterface") }
+    }
+    /// Next interface tap is a right click (opens the game menu), then resets.
+    var rightClickNext = false
     private var clickSeq: UInt32 = 0
 
     private var scenes: [WorldScene] = []
@@ -32,6 +43,7 @@ final class AppModel {
         client.onMessage = { [weak self] msg in
             guard let self else { return }
             if case .inputAck(let a) = msg { self.lastAck = a; return }
+            if case .uiFrame(let f) = msg { self.applyInterface(f); return }
             self.scenes.forEach { $0.apply(msg) }
         }
         browser.start()
@@ -52,6 +64,26 @@ final class AppModel {
         guard inputEnabled, client.isConnected else { return }
         clickSeq &+= 1
         client.send(RSProtocol.encodeClick(seq: clickSeq, button: button, x: p.x, y: p.y, z: p.z))
+    }
+
+    private func applyInterface(_ f: RSProtocol.UIFrame) {
+        guard showInterface,
+              let src = CGImageSourceCreateWithData(f.jpeg as CFData, nil),
+              let img = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return }
+        interfaceImage = img
+        canvasSize = CGSize(width: f.canvasWidth, height: f.canvasHeight)
+        interfaceFrames += 1
+    }
+
+    /// One tap on the interface panel = one click at that canvas pixel. `unit` is 0...1 in panel space.
+    func clickInterface(unit: CGPoint) {
+        guard inputEnabled, client.isConnected else { return }
+        let button: RSProtocol.Button = rightClickNext ? .right : .left
+        rightClickNext = false
+        let x = Int32((min(max(unit.x, 0), 0.9999) * canvasSize.width).rounded(.down))
+        let y = Int32((min(max(unit.y, 0), 0.9999) * canvasSize.height).rounded(.down))
+        clickSeq &+= 1
+        client.send(RSProtocol.encodeUIClick(seq: clickSeq, button: button, x: x, y: y))
     }
 
     func connectManual() {

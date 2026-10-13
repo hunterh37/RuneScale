@@ -19,8 +19,10 @@ public final class Protocol
 	public static final int STATIC_REMOVE = 6;
 	public static final int FRAME = 7;
 	public static final int INPUT_ACK = 8;
+	public static final int UI_FRAME = 9;
 	/** Headset to plugin. Only accepted when remote input is enabled. */
 	public static final int CLICK = 64;
+	public static final int UI_CLICK = 65;
 
 	public static final int BUTTON_LEFT = 0, BUTTON_RIGHT = 1;
 	public static final int ACK_OK = 0, ACK_DISABLED = 1, ACK_OFFSCREEN = 2, ACK_RATE_LIMITED = 3, ACK_NOT_LOGGED_IN = 4;
@@ -76,6 +78,17 @@ public final class Protocol
 	public static final class Click
 	{
 		public int seq, button, x, y, z;
+	}
+
+	public static final class UiClick
+	{
+		public int seq, button, x, y; // game canvas pixels
+	}
+
+	public static final class UiFrame
+	{
+		public int seq, canvasWidth, canvasHeight;
+		public byte[] jpeg;
 	}
 
 	public static final class Ack
@@ -178,6 +191,17 @@ public final class Protocol
 		return header(INPUT_ACK, 4 + 1 + 8).putInt(a.seq).put((byte) a.result).putInt(a.canvasX).putInt(a.canvasY).array();
 	}
 
+	public static byte[] uiClick(UiClick c)
+	{
+		return header(UI_CLICK, 4 + 1 + 8).putInt(c.seq).put((byte) c.button).putInt(c.x).putInt(c.y).array();
+	}
+
+	public static byte[] uiFrame(UiFrame f)
+	{
+		return header(UI_FRAME, 4 + 2 + 2 + 4 + f.jpeg.length).putInt(f.seq).putShort((short) f.canvasWidth)
+			.putShort((short) f.canvasHeight).putInt(f.jpeg.length).put(f.jpeg).array();
+	}
+
 	/** Decoded message: type plus one populated payload. Used by tests and tooling. */
 	public static final class Decoded
 	{
@@ -190,6 +214,8 @@ public final class Protocol
 		public List<Long> removed;
 		public Frame frame;
 		public Click click;
+		public UiClick uiClick;
+		public UiFrame uiFrame;
 		public Ack ack;
 	}
 
@@ -304,6 +330,28 @@ public final class Protocol
 				c.y = b.getInt();
 				c.z = b.getInt();
 				d.click = c;
+				break;
+			}
+			case UI_CLICK:
+			{
+				if (b.remaining() < 13) throw new IllegalArgumentException("truncated ui click");
+				UiClick c = new UiClick();
+				c.seq = b.getInt();
+				c.button = b.get() & 0xFF;
+				c.x = b.getInt();
+				c.y = b.getInt();
+				d.uiClick = c;
+				break;
+			}
+			case UI_FRAME:
+			{
+				UiFrame f = new UiFrame();
+				f.seq = b.getInt();
+				f.canvasWidth = b.getShort() & 0xFFFF;
+				f.canvasHeight = b.getShort() & 0xFFFF;
+				f.jpeg = new byte[b.getInt()];
+				b.get(f.jpeg);
+				d.uiFrame = f;
 				break;
 			}
 			case INPUT_ACK:

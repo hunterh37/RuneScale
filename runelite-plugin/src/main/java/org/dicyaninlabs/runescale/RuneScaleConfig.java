@@ -30,6 +30,18 @@ public interface RuneScaleConfig extends Config
 		position = 5, warning = "Headset taps will send real mouse clicks to the game. Plugins that send input are not allowed on the Plugin Hub. Enable?")
 	default boolean remoteInput() { return false; }
 
+	@ConfigItem(keyName = "streamInterface", name = "Stream interface",
+		description = "Send the client view (tabs, chat, minimap, dialogs) to the headset as a video panel", position = 6)
+	default boolean streamInterface() { return true; }
+
+	@ConfigItem(keyName = "interfaceFps", name = "Interface FPS", description = "Interface panel frames per second", position = 7)
+	@Range(min = 1, max = 30)
+	default int interfaceFps() { return 10; }
+
+	@ConfigItem(keyName = "interfaceWidth", name = "Interface width (px)", description = "Max width of streamed interface frames", position = 8)
+	@Range(min = 320, max = 2560)
+	default int interfaceWidth() { return 1280; }
+
 	@ConfigItem(keyName = "token", name = "", description = "", hidden = true)
 	default String token() { return ""; }
 }

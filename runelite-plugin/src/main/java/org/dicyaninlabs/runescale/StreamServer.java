@@ -15,7 +15,7 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 /**
- * LAN-only WebSocket server. Inbound binary CLICK messages are passed to {@code onClick};
+ * LAN-only WebSocket server. Inbound CLICK / UI_CLICK messages are passed to {@code onClick} / {@code onUiClick};
  * the plugin drops them unless headset input is enabled. Everything else inbound is ignored.
  */
 @Slf4j
@@ -25,11 +25,14 @@ class StreamServer extends WebSocketServer
 	private final AtomicBoolean resyncRequested = new AtomicBoolean();
 	private final Runnable onChange;
 	private final BiConsumer<Protocol.Click, Consumer<byte[]>> onClick;
+	private final BiConsumer<Protocol.UiClick, Consumer<byte[]>> onUiClick;
 
-	StreamServer(int port, String token, Runnable onChange, BiConsumer<Protocol.Click, Consumer<byte[]>> onClick)
+	StreamServer(int port, String token, Runnable onChange, BiConsumer<Protocol.Click, Consumer<byte[]>> onClick,
+		BiConsumer<Protocol.UiClick, Consumer<byte[]>> onUiClick)
 	{
 		super(new InetSocketAddress(port));
 		this.onClick = onClick;
+		this.onUiClick = onUiClick;
 		this.token = token;
 		this.onChange = onChange;
 		setReuseAddr(true);
@@ -100,11 +103,12 @@ class StreamServer extends WebSocketServer
 		{
 			return;
 		}
-		if (d.type != Protocol.CLICK) return;
-		onClick.accept(d.click, bytes ->
+		Consumer<byte[]> reply = bytes ->
 		{
 			if (conn.isOpen()) conn.send(bytes);
-		});
+		};
+		if (d.type == Protocol.CLICK) onClick.accept(d.click, reply);
+		else if (d.type == Protocol.UI_CLICK) onUiClick.accept(d.uiClick, reply);
 	}
 
 	@Override

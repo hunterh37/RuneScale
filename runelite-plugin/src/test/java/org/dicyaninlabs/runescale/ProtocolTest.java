@@ -115,4 +115,26 @@ public class ProtocolTest
 		assertEquals(766, p.x);
 		assertEquals(502, p.y);
 	}
+
+	@Test
+	public void uiClickAndFrameRoundTrip() throws Exception
+	{
+		Protocol.UiClick c = new Protocol.UiClick();
+		c.seq = 12; c.button = Protocol.BUTTON_RIGHT; c.x = 700; c.y = 480;
+		Protocol.UiClick e = Protocol.decode(Protocol.uiClick(c)).uiClick;
+		assertEquals(12, e.seq);
+		assertEquals(Protocol.BUTTON_RIGHT, e.button);
+		assertEquals(480, e.y);
+
+		java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(1600, 900, java.awt.image.BufferedImage.TYPE_INT_RGB);
+		java.awt.image.BufferedImage s = InterfaceCapture.scale(img, 800);
+		assertEquals(450, s.getHeight());
+		Protocol.UiFrame f = new Protocol.UiFrame();
+		f.seq = 3; f.canvasWidth = 1600; f.canvasHeight = 900; f.jpeg = InterfaceCapture.jpeg(s, 0.7f);
+		Protocol.UiFrame g = Protocol.decode(Protocol.uiFrame(f)).uiFrame;
+		assertEquals(1600, g.canvasWidth);
+		assertEquals(900, g.canvasHeight);
+		assertArrayEquals(f.jpeg, g.jpeg);
+		assertEquals(0xFF, g.jpeg[0] & 0xFF); // JPEG SOI
+	}
 }

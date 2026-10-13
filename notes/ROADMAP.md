@@ -53,8 +53,16 @@ written in notes/RESEARCH.md. A Hub-eligible build ships with the flag compiled 
 - [ ] Headset UI: inventory 4x7 grid window, side tab bar, orbs (HP, prayer, run, spec)
 - [ ] Widget click: tap a slot sends WIDGET_CLICK (group, child, slot); plugin clicks the widget
       bounds center on the canvas (requires the tab open; plugin presses the tab hotkey first)
-- [ ] Fallback: mirrored canvas video (ScreenCaptureKit on the Mac, low-latency H.264) as a flat
-      panel for interfaces not yet native
+- [x] Full interface panel: plugin streams the rendered canvas as JPEG UI_FRAME
+      (`InterfaceCapture`, `DrawManager.requestNextFrameListener`, 10 fps, 1280 px); every tab,
+      chatbox, minimap, orbs, dialogs and bank visible on the headset
+- [x] Interface click input: panel tap sends UI_CLICK (canvas pixel), plugin dispatches on the
+      canvas; Right click toggle makes the next tap a right click (game menu opens in the panel)
+- [x] Tabletop: panel attachment on the volume front edge, tilted toward the viewer
+- [x] Life scale: panel anchored 0.7 m in front of the user below eye level from the device pose
+      (`WorldTrackingProvider`), Recenter button re-anchors
+- [ ] Live verification: tab switching, inventory item use, prayer toggle, dialog continue
+- [ ] H.264 (VideoToolbox) instead of JPEG if bandwidth over 1 MB/s matters
 - [ ] Item drag (inventory rearrange): press, move, release sequence
 
 ## M4 Dialogs, bank, chat, keyboard

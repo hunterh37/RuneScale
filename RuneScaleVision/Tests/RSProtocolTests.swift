@@ -98,4 +98,17 @@ final class RSProtocolTests: XCTestCase {
         let u = Coordinates.units(p, metersPerUnit: s)
         XCTAssertEqual(u.x, 6464); XCTAssertEqual(u.y, -312); XCTAssertEqual(u.z, 6592)
     }
+
+    func testUIFrameAndClick() throws {
+        var w = W(); w.header(9); w.u32(4); w.u16(1600); w.u16(900); w.u32(3); w.u8(0xFF); w.u8(0xD8); w.u8(0xFF)
+        XCTAssertEqual(try RSProtocol.decode(w.d), .uiFrame(.init(seq: 4, canvasWidth: 1600, canvasHeight: 900, jpeg: Data([0xFF, 0xD8, 0xFF]))))
+        var t = W(); t.header(9); t.u32(4); t.u16(1); t.u16(1); t.u32(10); t.u8(0)
+        XCTAssertThrowsError(try RSProtocol.decode(t.d))
+
+        let d = RSProtocol.encodeUIClick(seq: 2, button: .left, x: 700, y: 480)
+        XCTAssertEqual(d.count, 17)
+        XCTAssertEqual(Array(d.prefix(4)), [0x53, 0x52, 1, 65])
+        XCTAssertEqual(Array(d[9..<13]), [0xBC, 0x02, 0, 0])
+        XCTAssertEqual(Array(d[13..<17]), [0xE0, 0x01, 0, 0])
+    }
 }

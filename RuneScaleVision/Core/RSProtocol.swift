@@ -54,6 +54,7 @@ public enum RSProtocol {
         case staticRemove([Int64])
         case frame(Frame)
         case inputAck(InputAck)
+        case uiFrame(UIFrame)
     }
 
     public enum Button: UInt8, Sendable { case left = 0, right = 1 }
@@ -66,6 +67,25 @@ public enum RSProtocol {
         public var seq: UInt32
         public var result: AckResult
         public var canvasX: Int32, canvasY: Int32
+    }
+
+    /// Rendered client canvas as JPEG. canvasWidth/Height are game canvas pixels for UI_CLICK.
+    public struct UIFrame: Sendable, Equatable {
+        public var seq: UInt32
+        public var canvasWidth: Int, canvasHeight: Int
+        public var jpeg: Data
+    }
+
+    /// Headset to plugin: click at a game canvas pixel (interface panel).
+    public static func encodeUIClick(seq: UInt32, button: Button, x: Int32, y: Int32) -> Data {
+        var w = [UInt8]()
+        w.reserveCapacity(17)
+        func put32(_ v: UInt32) { for i in 0..<4 { w.append(UInt8((v >> (8 * UInt32(i))) & 0xFF)) } }
+        w += [0x53, 0x52, version, 65]
+        put32(seq)
+        w.append(button.rawValue)
+        put32(UInt32(bitPattern: x)); put32(UInt32(bitPattern: y))
+        return Data(w)
     }
 
     /// Headset to plugin: click at a scene-local point (units, OSRS axes: x east, y height down, z north).
@@ -145,6 +165,11 @@ public enum RSProtocol {
             let seq = try r.u32()
             let res = AckResult(rawValue: try r.u8()) ?? .unknown
             return .inputAck(InputAck(seq: seq, result: res, canvasX: try r.i32(), canvasY: try r.i32()))
+        case 9:
+            let seq = try r.u32()
+            let w = Int(try r.u16()), h = Int(try r.u16())
+            let n = Int(try r.u32())
+            return .uiFrame(UIFrame(seq: seq, canvasWidth: w, canvasHeight: h, jpeg: Data(try r.bytes(n))))
         default:
             throw DecodeError.unknownType(type)
         }

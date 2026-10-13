@@ -75,7 +75,7 @@ final class WorldScene {
             for id in ids { statics.removeValue(forKey: id)?.removeFromParent() }
         case .frame(let f):
             applyFrame(f)
-        case .inputAck:
+        case .inputAck, .uiFrame:
             break
         }
     }

@@ -1,6 +1,6 @@
 # RuneScale Stream protocol v1
 
-Transport: WebSocket, binary frames, one message per frame. Types 1-8 plugin to headset; 64 headset to plugin.
+Transport: WebSocket, binary frames, one message per frame. Types 1-9 plugin to headset; 64-65 headset to plugin.
 Connect to `ws://<mac-ip>:43595/?token=<6 digits>` or send header `X-RuneScale-Token`.
 Bonjour type `_runescale._tcp`. All integers little-endian.
 
@@ -15,6 +15,8 @@ Header (4 bytes): `u16 magic 0x5253`, `u8 version 1`, `u8 type`.
 | 5 | STATIC_ADD | `u32 n`, n x (`i64 instanceId, i64 meshId, i32 x, i32 height, i32 z, u16 orientation`) |
 | 6 | STATIC_REMOVE | `u32 n`, n x `i64 instanceId` |
 | 8 | INPUT_ACK | `u32 seq, u8 result (0 ok, 1 input disabled, 2 offscreen, 3 rate limited, 4 not logged in), i32 canvasX, i32 canvasY` |
+| 9 | UI_FRAME | `u32 seq, u16 canvasW, u16 canvasH, u32 len, len x u8` JPEG of the rendered client canvas |
+| 65 | UI_CLICK (headset to plugin) | `u32 seq, u8 button, i32 x, i32 y` game canvas pixels |
 | 64 | CLICK (headset to plugin) | `u32 seq, u8 button (0 left, 1 right), i32 x, i32 height, i32 z` scene-local units |
 | 7 | FRAME | `u32 tick, i32 px, i32 pheight, i32 pz, u16 playerOrientation, u16 cameraYaw, u8 plane, u32 n`, n x (`u32 key, u8 kind (0 local,1 player,2 npc), i32 x, i32 height, i32 z, u16 orientation, i64 meshId`) |
 
@@ -34,3 +36,8 @@ Orientation o maps to yaw `-o * 2pi / 2048` about +Y. Winding is preserved (180 
 Input: CLICK is accepted only when the plugin option Headset input is on. The plugin projects the
 point with `Perspective.localToCanvas`, drops it if outside the viewport, and dispatches one
 press/release/click on the canvas. Minimum 100 ms between clicks. Every CLICK gets one INPUT_ACK.
+
+Interface: UI_FRAME carries the whole rendered canvas (side tabs, chatbox, minimap, orbs, dialogs,
+bank) at up to `Interface FPS` (default 10), scaled to `Interface width` (default 1280), one frame in
+flight. canvasW/H are game canvas pixels; the headset maps a panel tap to those pixels and sends
+UI_CLICK. UI_CLICK uses the same Headset input gate, 100 ms floor and INPUT_ACK (2 = outside canvas).

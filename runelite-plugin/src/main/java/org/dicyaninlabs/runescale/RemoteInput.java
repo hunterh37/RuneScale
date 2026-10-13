@@ -42,15 +42,10 @@ class RemoteInput
 			reply.accept(ack(c, Protocol.ACK_DISABLED, -1, -1));
 			return;
 		}
-		long now = System.currentTimeMillis();
-		synchronized (this)
+		if (!takeSlot())
 		{
-			if (now - lastClick < MIN_INTERVAL_MS)
-			{
-				reply.accept(ack(c, Protocol.ACK_RATE_LIMITED, -1, -1));
-				return;
-			}
-			lastClick = now;
+			reply.accept(ack(c, Protocol.ACK_RATE_LIMITED, -1, -1));
+			return;
 		}
 		clientThread.invoke(() ->
 		{
@@ -70,6 +65,41 @@ class RemoteInput
 			SwingUtilities.invokeLater(() -> dispatch(client.getCanvas(), real.x, real.y, c.button));
 			reply.accept(ack(c, Protocol.ACK_OK, p.getX(), p.getY()));
 		});
+	}
+
+	/** Click at a game-canvas pixel from the mirrored interface panel. Works on any game state. */
+	void handleUi(Protocol.UiClick c, boolean enabled, Consumer<byte[]> reply)
+	{
+		log.info("headset ui click #{} button={} at {},{} enabled={}", c.seq, c.button, c.x, c.y, enabled);
+		if (!enabled)
+		{
+			reply.accept(ack(c.seq, Protocol.ACK_DISABLED, -1, -1));
+			return;
+		}
+		if (!takeSlot())
+		{
+			reply.accept(ack(c.seq, Protocol.ACK_RATE_LIMITED, -1, -1));
+			return;
+		}
+		clientThread.invoke(() ->
+		{
+			if (c.x < 0 || c.y < 0 || c.x >= client.getCanvasWidth() || c.y >= client.getCanvasHeight())
+			{
+				reply.accept(ack(c.seq, Protocol.ACK_OFFSCREEN, -1, -1));
+				return;
+			}
+			java.awt.Point real = toRealCanvas(c.x, c.y);
+			SwingUtilities.invokeLater(() -> dispatch(client.getCanvas(), real.x, real.y, c.button));
+			reply.accept(ack(c.seq, Protocol.ACK_OK, c.x, c.y));
+		});
+	}
+
+	private synchronized boolean takeSlot()
+	{
+		long now = System.currentTimeMillis();
+		if (now - lastClick < MIN_INTERVAL_MS) return false;
+		lastClick = now;
+		return true;
 	}
 
 	private boolean inViewport(Point p)
@@ -107,8 +137,13 @@ class RemoteInput
 
 	private static byte[] ack(Protocol.Click c, int result, int x, int y)
 	{
+		return ack(c.seq, result, x, y);
+	}
+
+	private static byte[] ack(int seq, int result, int x, int y)
+	{
 		Protocol.Ack a = new Protocol.Ack();
-		a.seq = c.seq;
+		a.seq = seq;
 		a.result = result;
 		a.canvasX = x;
 		a.canvasY = y;
