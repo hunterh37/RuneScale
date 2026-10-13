@@ -23,5 +23,6 @@ struct RuneScaleApp: App {
                 .environment(model)
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed, .full)
+        .immersiveEnvironmentBehavior(.coexist)
     }
 }
