@@ -137,4 +137,43 @@ public class ProtocolTest
 		assertArrayEquals(f.jpeg, g.jpeg);
 		assertEquals(0xFF, g.jpeg[0] & 0xFF); // JPEG SOI
 	}
+
+	@Test
+	public void containerRoundTrip()
+	{
+		net.runelite.api.Item[] src = {new net.runelite.api.Item(995, 1000), new net.runelite.api.Item(-1, 0), new net.runelite.api.Item(379, 1)};
+		Protocol.Container c = ItemSync.snapshot(Protocol.CONTAINER_INVENTORY, 28, src);
+		Protocol.Decoded d = Protocol.decode(Protocol.container(c));
+		assertEquals(Protocol.CONTAINER, d.type);
+		assertEquals(28, d.container.ids.length);
+		assertEquals(995, d.container.ids[0]);
+		assertEquals(1000, d.container.qty[0]);
+		assertEquals(-1, d.container.ids[1]);
+		assertEquals(379, d.container.ids[2]);
+		assertEquals(-1, d.container.ids[27]);
+	}
+
+	@Test
+	public void widgetClickAndIconRoundTrip()
+	{
+		Protocol.WidgetClick w = new Protocol.WidgetClick();
+		w.seq = 7; w.button = 1; w.container = Protocol.CONTAINER_EQUIPMENT; w.slot = 3;
+		Protocol.Decoded d = Protocol.decode(Protocol.widgetClick(w));
+		assertEquals(Protocol.WIDGET_CLICK, d.type);
+		assertEquals(7, d.widgetClick.seq);
+		assertEquals(1, d.widgetClick.button);
+		assertEquals(3, d.widgetClick.slot);
+		Protocol.ItemIcon i = new Protocol.ItemIcon();
+		i.itemId = 4151; i.png = new byte[]{1, 2, 3};
+		Protocol.Decoded di = Protocol.decode(Protocol.itemIcon(i));
+		assertEquals(4151, di.icon.itemId);
+		assertArrayEquals(i.png, di.icon.png);
+		assertEquals(-1, WidgetSlots.equipmentComponent(6));
+		Protocol.EquipModel e = new Protocol.EquipModel();
+		e.slot = 3; e.itemId = 4151; e.meshId = -77L;
+		Protocol.Decoded de = Protocol.decode(Protocol.equipModel(e));
+		assertEquals(3, de.equip.slot);
+		assertEquals(4151, de.equip.itemId);
+		assertEquals(-77L, de.equip.meshId);
+	}
 }

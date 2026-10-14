@@ -35,6 +35,8 @@ targets:
       properties:
         NSBonjourServices: [_runescale._tcp]
         NSLocalNetworkUsageDescription: RuneScale connects to the RuneScale Stream plugin running in RuneLite on your Mac.
+        NSHandsTrackingUsageDescription: RuneScale reads hand poses so a sword swing, pinch or reach into the backpack becomes one game click.
+        NSWorldSensingUsageDescription: RuneScale places the interface and backpack relative to where you stand.
         UIApplicationSceneManifest:
           UIApplicationPreferredDefaultSceneSessionRole: UIWindowSceneSessionRoleApplication
           UIApplicationSupportsMultipleScenes: true

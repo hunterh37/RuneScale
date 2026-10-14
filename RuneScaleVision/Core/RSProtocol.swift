@@ -55,12 +55,35 @@ public enum RSProtocol {
         case frame(Frame)
         case inputAck(InputAck)
         case uiFrame(UIFrame)
+        case container(Container)
+        case itemIcon(itemId: Int32, png: Data)
+        case equipModel(slot: UInt8, itemId: Int32, meshId: Int64)
+    }
+
+    public enum ContainerKind: UInt8, Sendable { case inventory = 0, equipment = 1 }
+
+    /// Item container snapshot. Slot i holds ids[i] x quantities[i]; id -1 is empty.
+    public struct Container: Sendable, Equatable {
+        public var kind: ContainerKind
+        public var ids: [Int32]
+        public var quantities: [Int32]
+        public init(kind: ContainerKind, ids: [Int32], quantities: [Int32]) {
+            self.kind = kind; self.ids = ids; self.quantities = quantities
+        }
+    }
+
+    /// Headset to plugin: click one inventory or equipment slot widget.
+    public static func encodeWidgetClick(seq: UInt32, button: Button, container: ContainerKind, slot: UInt8) -> Data {
+        var w: [UInt8] = [0x53, 0x52, version, 66]
+        for i in 0..<4 { w.append(UInt8((seq >> (8 * UInt32(i))) & 0xFF)) }
+        w += [button.rawValue, container.rawValue, slot]
+        return Data(w)
     }
 
     public enum Button: UInt8, Sendable { case left = 0, right = 1 }
 
     public enum AckResult: UInt8, Sendable {
-        case ok = 0, disabled = 1, offscreen = 2, rateLimited = 3, notLoggedIn = 4, unknown = 255
+        case ok = 0, disabled = 1, offscreen = 2, rateLimited = 3, notLoggedIn = 4, widgetHidden = 5, unknown = 255
     }
 
     public struct InputAck: Sendable, Equatable {
@@ -170,6 +193,18 @@ public enum RSProtocol {
             let w = Int(try r.u16()), h = Int(try r.u16())
             let n = Int(try r.u32())
             return .uiFrame(UIFrame(seq: seq, canvasWidth: w, canvasHeight: h, jpeg: Data(try r.bytes(n))))
+        case 10:
+            let kind = ContainerKind(rawValue: try r.u8()) ?? .inventory
+            let n = Int(try r.u32())
+            var ids = [Int32](), qty = [Int32]()
+            for _ in 0..<n { ids.append(try r.i32()); qty.append(try r.i32()) }
+            return .container(Container(kind: kind, ids: ids, quantities: qty))
+        case 12:
+            return .equipModel(slot: try r.u8(), itemId: try r.i32(), meshId: try r.i64())
+        case 11:
+            let id = try r.i32()
+            let n = Int(try r.u32())
+            return .itemIcon(itemId: id, png: Data(try r.bytes(n)))
         default:
             throw DecodeError.unknownType(type)
         }

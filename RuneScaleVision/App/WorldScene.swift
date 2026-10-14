@@ -22,6 +22,8 @@ final class WorldScene {
     private var statics: [Int64: Entity] = [:]
     private var terrain: [Entity] = []
     private var actors: [UInt32: ModelEntity] = [:]
+    /// Last FRAME state per actor key, scene-local units, for attack clicks.
+    private(set) var actorState: [UInt32: RSProtocol.Actor] = [:]
     private var playerTarget = SIMD3<Float>.zero
     private var hasPlayer = false
     private static let maxTransient = 800
@@ -75,7 +77,7 @@ final class WorldScene {
             for id in ids { statics.removeValue(forKey: id)?.removeFromParent() }
         case .frame(let f):
             applyFrame(f)
-        case .inputAck, .uiFrame:
+        case .inputAck, .uiFrame, .container, .itemIcon, .equipModel:
             break
         }
     }
@@ -122,6 +124,7 @@ final class WorldScene {
         }
 
         var seen = Set<UInt32>()
+        actorState = Dictionary(f.actors.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         for a in f.actors {
             guard let res = meshes[a.meshId] else { continue }
             seen.insert(a.key)
@@ -142,6 +145,25 @@ final class WorldScene {
             e.removeFromParent()
             actors.removeValue(forKey: key)
         }
+    }
+
+    func meshResource(_ id: Int64) -> MeshResource? { meshes[id] }
+    var paletteMaterial: RealityKit.Material { material }
+
+    /// NPCs as swing targets in world meters (bounds of the rendered actor).
+    func npcTargets() -> [GestureTarget] {
+        actors.compactMap { key, e in
+            guard actorState[key]?.kind == .npc else { return nil }
+            let b = e.visualBounds(relativeTo: nil)
+            guard !b.isEmpty else { return nil }
+            return GestureTarget(key: key, center: b.center, radius: max(0.15, min(b.extents.x, b.extents.z) / 2))
+        }
+    }
+
+    /// Body-center click point for an actor: tile position raised half a typical model height.
+    func clickPoint(actor key: UInt32) -> (x: Int32, y: Int32, z: Int32)? {
+        guard let a = actorState[key] else { return nil }
+        return (a.x, a.y - 90, a.z) // height is positive downward
     }
 
     /// Box collider from mesh bounds: cheap, used for objects and actors.

@@ -94,6 +94,43 @@ class RemoteInput
 		});
 	}
 
+	/**
+	 * Click one inventory or equipment slot by its widget bounds. The tab must be open; a hidden
+	 * widget returns ACK_WIDGET_HIDDEN instead of switching tabs (one gesture, one click).
+	 */
+	void handleWidget(Protocol.WidgetClick c, boolean enabled, Consumer<byte[]> reply)
+	{
+		log.info("headset widget click #{} container={} slot={} enabled={}", c.seq, c.container, c.slot, enabled);
+		if (!enabled)
+		{
+			reply.accept(ack(c.seq, Protocol.ACK_DISABLED, -1, -1));
+			return;
+		}
+		if (!takeSlot())
+		{
+			reply.accept(ack(c.seq, Protocol.ACK_RATE_LIMITED, -1, -1));
+			return;
+		}
+		clientThread.invoke(() ->
+		{
+			if (client.getGameState() != GameState.LOGGED_IN)
+			{
+				reply.accept(ack(c.seq, Protocol.ACK_NOT_LOGGED_IN, -1, -1));
+				return;
+			}
+			java.awt.Rectangle r = WidgetSlots.bounds(client, c.container, c.slot);
+			if (r == null)
+			{
+				reply.accept(ack(c.seq, Protocol.ACK_WIDGET_HIDDEN, -1, -1));
+				return;
+			}
+			int x = (int) r.getCenterX(), y = (int) r.getCenterY();
+			java.awt.Point real = toRealCanvas(x, y);
+			SwingUtilities.invokeLater(() -> dispatch(client.getCanvas(), real.x, real.y, c.button));
+			reply.accept(ack(c.seq, Protocol.ACK_OK, x, y));
+		});
+	}
+
 	private synchronized boolean takeSlot()
 	{
 		long now = System.currentTimeMillis();

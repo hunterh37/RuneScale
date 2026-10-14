@@ -26,11 +26,13 @@ class StreamServer extends WebSocketServer
 	private final Runnable onChange;
 	private final BiConsumer<Protocol.Click, Consumer<byte[]>> onClick;
 	private final BiConsumer<Protocol.UiClick, Consumer<byte[]>> onUiClick;
+	private final BiConsumer<Protocol.WidgetClick, Consumer<byte[]>> onWidgetClick;
 
 	StreamServer(int port, String token, Runnable onChange, BiConsumer<Protocol.Click, Consumer<byte[]>> onClick,
-		BiConsumer<Protocol.UiClick, Consumer<byte[]>> onUiClick)
+		BiConsumer<Protocol.UiClick, Consumer<byte[]>> onUiClick, BiConsumer<Protocol.WidgetClick, Consumer<byte[]>> onWidgetClick)
 	{
 		super(new InetSocketAddress(port));
+		this.onWidgetClick = onWidgetClick;
 		this.onClick = onClick;
 		this.onUiClick = onUiClick;
 		this.token = token;
@@ -109,6 +111,7 @@ class StreamServer extends WebSocketServer
 		};
 		if (d.type == Protocol.CLICK) onClick.accept(d.click, reply);
 		else if (d.type == Protocol.UI_CLICK) onUiClick.accept(d.uiClick, reply);
+		else if (d.type == Protocol.WIDGET_CLICK) onWidgetClick.accept(d.widgetClick, reply);
 	}
 
 	@Override

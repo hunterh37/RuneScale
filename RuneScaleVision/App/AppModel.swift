@@ -36,6 +36,20 @@ final class AppModel {
     /// Next interface tap is a right click (opens the game menu), then resets.
     var rightClickNext = false
     private var clickSeq: UInt32 = 0
+    /// Inventory (28) and equipment (14) from CONTAINER; icons from ITEM_ICON by item id.
+    var inventory = RSProtocol.Container(kind: .inventory, ids: Array(repeating: -1, count: 28), quantities: Array(repeating: 0, count: 28))
+    var equipment = RSProtocol.Container(kind: .equipment, ids: Array(repeating: -1, count: 14), quantities: Array(repeating: 0, count: 14))
+    var itemIcons: [Int32: CGImage] = [:]
+    var backpackOpen = false
+    var handGestures: Bool = UserDefaults.standard.object(forKey: "handGestures") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(handGestures, forKey: "handGestures") }
+    }
+    var swordHand: String = UserDefaults.standard.string(forKey: "swordHand") ?? "right" {
+        didSet { UserDefaults.standard.set(swordHand, forKey: "swordHand") }
+    }
+    var lastGesture = "No gesture yet"
+    /// Worn models on the user's body (immersive space only).
+    let rig = EquipmentRig()
 
     private var scenes: [WorldScene] = []
 
@@ -44,7 +58,19 @@ final class AppModel {
             guard let self else { return }
             if case .inputAck(let a) = msg { self.lastAck = a; return }
             if case .uiFrame(let f) = msg { self.applyInterface(f); return }
+            if case .container(let c) = msg {
+                if c.kind == .inventory { self.inventory = c } else { self.equipment = c }
+                return
+            }
+            if case .itemIcon(let id, let png) = msg {
+                if let src = CGImageSourceCreateWithData(png as CFData, nil),
+                   let img = CGImageSourceCreateImageAtIndex(src, 0, nil) { self.itemIcons[id] = img }
+                return
+            }
             self.scenes.forEach { $0.apply(msg) }
+            if case .equipModel(let slot, _, let meshId) = msg, let scene = self.scenes.first {
+                self.rig.set(slot: slot, meshId: meshId, scene: scene)
+            }
         }
         browser.start()
     }
@@ -64,6 +90,13 @@ final class AppModel {
         guard inputEnabled, client.isConnected else { return }
         clickSeq &+= 1
         client.send(RSProtocol.encodeClick(seq: clickSeq, button: button, x: p.x, y: p.y, z: p.z))
+    }
+
+    /// One gesture = one click on an inventory or equipment slot.
+    func clickSlot(_ container: RSProtocol.ContainerKind, slot: Int, button: RSProtocol.Button = .left) {
+        guard inputEnabled, client.isConnected, (0..<256).contains(slot) else { return }
+        clickSeq &+= 1
+        client.send(RSProtocol.encodeWidgetClick(seq: clickSeq, button: button, container: container, slot: UInt8(slot)))
     }
 
     private func applyInterface(_ f: RSProtocol.UIFrame) {

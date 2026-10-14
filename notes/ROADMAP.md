@@ -72,31 +72,36 @@ menu-row click) that the same gesture would need with a mouse; the plugin protoc
 UI_CLICK, WIDGET_CLICK. Gestures pick the target; the game decides the outcome (attack speed,
 pathing, hit roll). No gesture sends repeated or timed clicks.
 
-- [ ] `HandTrackingProvider` session in the ImmersiveSpace (`NSHandsTrackingUsageDescription`),
+- [x] `HandTrackingProvider` session in the ImmersiveSpace (`NSHandsTrackingUsageDescription`),
       joint poses per frame, fallback to `SpatialTapGesture` when tracking is lost or denied
-- [ ] `GestureRecognizer` (Core, unit-tested on recorded joint traces): pinch, pinch-hold, grab
+- [x] `GestureRecognizer` (Core, unit-tested on recorded joint traces): pinch, pinch-hold, grab
       (all fingertips to palm), release, point (index extended ray), swing (wrist speed over
       1.5 m/s along an arc), palm-up, two-hand pinch; hysteresis and 250 ms debounce
-- [ ] `IntentMapper`: gesture + target to one action. Swing through or toward an NPC collider =
+- [~] `IntentMapper`: swing to Attack done (blade-path hit, then 25 degree aim cone); pinch-hold and
+      grab-to-Take open. Gesture + target to one action. Swing through or toward an NPC collider =
       one left click on that NPC (Attack); point + pinch = click at ray hit; pinch-hold = right
       click and menu (M2); grab on ground item = Take; grab on door/lever = top action
 - [ ] Target resolution: swing hit volume (capsule along the blade path), nearest attackable NPC
       by angle, cancel when the top menu option is not Attack (needs MENU stream, M2)
-- [ ] Held weapon model: equipped weapon mesh (from equipment widget item id, M3 sprite/model
+- [x] Held weapon model: equipped weapon mesh (from equipment widget item id, M3 sprite/model
       transfer) parented to the hand anchor; sword, bow, staff poses
 - [ ] Combat feedback: hand haptic substitute (spatial click sound), hit flash on the NPC from
       HITSPLAT/actor events, swing trail; game attack cooldown shown as a ring on the weapon
-- [ ] Backpack: 3D bag anchored over the shoulder/hip (body anchor from device pose), reach behind
+- [x] Backpack: 3D bag anchored over the shoulder/hip (body anchor from device pose), reach behind
       plus grab opens a 4x7 spatial inventory grid from the widget stream (M3, group 149)
 - [ ] Backpack actions: pinch an item = WIDGET_CLICK slot (eat, wield, drink); drag item onto an
       NPC/object/item = Use (two clicks: item, then target); drop out of hand = Drop via menu row
+- [x] Worn models: EQUIP_MODEL streams inventory models per slot; `EquipmentRig` puts the weapon in
+      the sword hand, shield in the off hand, gloves on both hands, amulet/body/cape/legs/boots from the
+      head pose (`BodyLayout`), helm hidden. Model axis alignment needs live tuning per item
+- [~] Backpack slot tap = WIDGET_CLICK (inventory and equipment, tab must be open; ACK 5 otherwise)
 - [ ] Equipment on body: helm at head, shield on off-hand; grab to remove = WIDGET_CLICK on
       equipment group 387
 - [ ] Spells: palm-up summons spellbook ring, pinch a rune icon then point at target = cast
       (spell widget click, then target click); prayer ring on the off-hand wrist
 - [ ] Locomotion: point at ground + pinch = walk here; teleport-style arc preview of the tile
 - [ ] Settings: handedness, gesture set toggles, swing sensitivity, tap-only mode
-- [ ] Tests: GestureRecognizerTests on recorded traces, IntentMapperTests (gesture to click count)
+- [x] Tests: GestureRecognizerTests on recorded traces, IntentMapperTests (gesture to click count)
 - [ ] Live verification: swing kills a chicken, eat food from backpack, wield from backpack,
       use item on object, cast Wind Strike by gesture
 

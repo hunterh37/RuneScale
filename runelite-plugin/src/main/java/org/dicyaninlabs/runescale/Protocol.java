@@ -20,6 +20,12 @@ public final class Protocol
 	public static final int FRAME = 7;
 	public static final int INPUT_ACK = 8;
 	public static final int UI_FRAME = 9;
+	public static final int CONTAINER = 10;
+	public static final int ITEM_ICON = 11;
+	public static final int EQUIP_MODEL = 12;
+	public static final int WIDGET_CLICK = 66;
+	public static final int CONTAINER_INVENTORY = 0, CONTAINER_EQUIPMENT = 1;
+	public static final int ACK_WIDGET_HIDDEN = 5;
 	/** Headset to plugin. Only accepted when remote input is enabled. */
 	public static final int CLICK = 64;
 	public static final int UI_CLICK = 65;
@@ -89,6 +95,32 @@ public final class Protocol
 	{
 		public int seq, canvasWidth, canvasHeight;
 		public byte[] jpeg;
+	}
+
+	/** Item container snapshot: slot i holds ids[i] x qty[i]; id -1 is empty. */
+	public static final class Container
+	{
+		public int kind;
+		public int[] ids = new int[0], qty = new int[0];
+	}
+
+	/** Worn item 3D model: slot (EquipmentInventorySlot idx), item id, inventory-model mesh id (0 = empty). */
+	public static final class EquipModel
+	{
+		public int slot, itemId;
+		public long meshId;
+	}
+
+	public static final class ItemIcon
+	{
+		public int itemId;
+		public byte[] png;
+	}
+
+	/** Headset to plugin: click one slot of an item container widget. */
+	public static final class WidgetClick
+	{
+		public int seq, button, container, slot;
 	}
 
 	public static final class Ack
@@ -202,6 +234,28 @@ public final class Protocol
 			.putShort((short) f.canvasHeight).putInt(f.jpeg.length).put(f.jpeg).array();
 	}
 
+	public static byte[] container(Container c)
+	{
+		ByteBuffer b = header(CONTAINER, 1 + 4 + c.ids.length * 8).put((byte) c.kind).putInt(c.ids.length);
+		for (int i = 0; i < c.ids.length; i++) b.putInt(c.ids[i]).putInt(c.qty[i]);
+		return b.array();
+	}
+
+	public static byte[] itemIcon(ItemIcon i)
+	{
+		return header(ITEM_ICON, 8 + i.png.length).putInt(i.itemId).putInt(i.png.length).put(i.png).array();
+	}
+
+	public static byte[] equipModel(EquipModel e)
+	{
+		return header(EQUIP_MODEL, 1 + 4 + 8).put((byte) e.slot).putInt(e.itemId).putLong(e.meshId).array();
+	}
+
+	public static byte[] widgetClick(WidgetClick c)
+	{
+		return header(WIDGET_CLICK, 4 + 3).putInt(c.seq).put((byte) c.button).put((byte) c.container).put((byte) c.slot).array();
+	}
+
 	/** Decoded message: type plus one populated payload. Used by tests and tooling. */
 	public static final class Decoded
 	{
@@ -217,6 +271,10 @@ public final class Protocol
 		public UiClick uiClick;
 		public UiFrame uiFrame;
 		public Ack ack;
+		public Container container;
+		public ItemIcon icon;
+		public WidgetClick widgetClick;
+		public EquipModel equip;
 	}
 
 	public static Decoded decode(byte[] data)
@@ -362,6 +420,50 @@ public final class Protocol
 				a.canvasX = b.getInt();
 				a.canvasY = b.getInt();
 				d.ack = a;
+				break;
+			}
+			case CONTAINER:
+			{
+				Container c = new Container();
+				c.kind = b.get() & 0xFF;
+				int n = b.getInt();
+				c.ids = new int[n];
+				c.qty = new int[n];
+				for (int i = 0; i < n; i++)
+				{
+					c.ids[i] = b.getInt();
+					c.qty[i] = b.getInt();
+				}
+				d.container = c;
+				break;
+			}
+			case ITEM_ICON:
+			{
+				ItemIcon i = new ItemIcon();
+				i.itemId = b.getInt();
+				i.png = new byte[b.getInt()];
+				b.get(i.png);
+				d.icon = i;
+				break;
+			}
+			case EQUIP_MODEL:
+			{
+				EquipModel e = new EquipModel();
+				e.slot = b.get() & 0xFF;
+				e.itemId = b.getInt();
+				e.meshId = b.getLong();
+				d.equip = e;
+				break;
+			}
+			case WIDGET_CLICK:
+			{
+				if (b.remaining() < 7) throw new IllegalArgumentException("truncated widget click");
+				WidgetClick c = new WidgetClick();
+				c.seq = b.getInt();
+				c.button = b.get() & 0xFF;
+				c.container = b.get() & 0xFF;
+				c.slot = b.get() & 0xFF;
+				d.widgetClick = c;
 				break;
 			}
 			default:

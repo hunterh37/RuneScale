@@ -15,6 +15,8 @@ import net.runelite.api.GameState;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.Subscribe;
@@ -44,10 +46,12 @@ public class RuneScaleStreamPlugin extends Plugin
 	@Inject private ClientToolbar clientToolbar;
 	@Inject private ClientThread clientThread;
 	@Inject private DrawManager drawManager;
+	@Inject private ItemManager itemManager;
 
 	private SceneCapture capture;
 	private RemoteInput input;
 	private InterfaceCapture ui;
+	private ItemSync items;
 	private StreamServer server;
 	private JmDNS jmdns;
 	private RuneScalePanel panel;
@@ -74,6 +78,7 @@ public class RuneScaleStreamPlugin extends Plugin
 		capture = new SceneCapture(client);
 		input = new RemoteInput(client, clientThread);
 		ui = new InterfaceCapture(client, drawManager);
+		items = new ItemSync(client, itemManager);
 		panel = new RuneScalePanel();
 		navButton = NavigationButton.builder().tooltip("RuneScale Stream").icon(icon()).priority(9).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
@@ -95,7 +100,8 @@ public class RuneScaleStreamPlugin extends Plugin
 		int port = config.port();
 		server = new StreamServer(port, token, this::refreshPanel,
 			(click, reply) -> input.handle(click, config.remoteInput(), reply),
-			(click, reply) -> input.handleUi(click, config.remoteInput(), reply));
+			(click, reply) -> input.handleUi(click, config.remoteInput(), reply),
+			(click, reply) -> input.handleWidget(click, config.remoteInput(), reply));
 		server.start();
 		InetAddress lan = StreamServer.lanAddress();
 		if (config.bonjour())
@@ -160,11 +166,23 @@ public class RuneScaleStreamPlugin extends Plugin
 	}
 
 	@Subscribe
+	public void onItemContainerChanged(ItemContainerChanged e)
+	{
+		if (server == null || items == null || server.clientCount() == 0) return;
+		items.send(e.getContainerId(), server::broadcast);
+	}
+
+	@Subscribe
 	public void onGameTick(GameTick e)
 	{
 		if (server == null || capture == null || server.clientCount() == 0) return;
 		boolean resync = server.takeResync();
-		if (resync) server.broadcast(Protocol.hello(config.radius()));
+		if (resync)
+		{
+			server.broadcast(Protocol.hello(config.radius()));
+			items.reset();
+			items.sendAll(server::broadcast);
+		}
 		if (resync || ++tickCounter >= config.staticInterval())
 		{
 			tickCounter = 0;

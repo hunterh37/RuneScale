@@ -22,8 +22,12 @@
 	<array>
 		<string>_runescale._tcp</string>
 	</array>
+	<key>NSHandsTrackingUsageDescription</key>
+	<string>RuneScale reads hand poses so a sword swing, pinch or reach into the backpack becomes one game click.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>RuneScale connects to the RuneScale Stream plugin running in RuneLite on your Mac.</string>
+	<key>NSWorldSensingUsageDescription</key>
+	<string>RuneScale places the interface and backpack relative to where you stand.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationPreferredDefaultSceneSessionRole</key>

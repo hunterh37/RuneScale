@@ -39,6 +39,14 @@ struct ConnectionView: View {
                         Text("Last click #\(a.seq): \(ackText(a))").foregroundStyle(.secondary)
                     }
                 }
+                Section("Hands") {
+                    Toggle("Hand gestures (swing, backpack)", isOn: $model.handGestures)
+                    Picker("Sword hand", selection: $model.swordHand) {
+                        Text("Right").tag("right")
+                        Text("Left").tag("left")
+                    }
+                    Text(model.lastGesture).foregroundStyle(.secondary)
+                }
                 Section("Status") {
                     Text(statusText)
                     Text("\(model.client.messagesReceived) messages, \(model.client.bytesReceived / 1024) KB")
@@ -75,6 +83,7 @@ struct ConnectionView: View {
         case .offscreen: "point not visible in the game view"
         case .rateLimited: "dropped (too fast)"
         case .notLoggedIn: "not logged in"
+        case .widgetHidden: "open the inventory or equipment tab in game"
         case .unknown: "unknown result"
         }
     }
@@ -94,6 +103,9 @@ struct ImmersiveView: View {
     @State private var scene: WorldScene?
     @State private var panel: Entity?
     @State private var head = HeadTracker()
+    @State private var hands = HandInput()
+    @State private var backpack: Entity?
+    @State private var sword: Entity?
 
     var body: some View {
         RealityView { content, attachments in
@@ -101,6 +113,16 @@ struct ImmersiveView: View {
             content.add(s.root)
             scene = s
             model.register(s)
+            content.add(model.rig.root)
+            let blade = SwordModel.make()
+            blade.isEnabled = false
+            content.add(blade)
+            sword = blade
+            if let bag = attachments.entity(for: "backpack") {
+                bag.isEnabled = false
+                content.add(bag)
+                backpack = bag
+            }
             if let ui = attachments.entity(for: "interface") {
                 ui.position = [0, 1.15, -0.75] // until the device pose is known
                 content.add(ui)
@@ -111,8 +133,16 @@ struct ImmersiveView: View {
                 InterfacePanel(width: 1000) { recenter() }
                     .environment(model)
             }
+            Attachment(id: "backpack") {
+                BackpackView { model.backpackOpen = false }
+                    .environment(model)
+            }
         }
         .modifier(TapToClick(model: model, scene: scene))
+        .task {
+            guard model.handGestures else { return }
+            await hands.run(model: model, scene: { scene }, head: { head.pose() }, sword: { sword }, backpack: { backpack }, rig: model.rig)
+        }
         .task {
             await head.start()
             for _ in 0..<30 {
@@ -123,6 +153,7 @@ struct ImmersiveView: View {
         .onDisappear {
             if let scene { model.unregister(scene) }
             head.stop()
+            hands.stop()
             model.immersiveOpen = false
         }
     }
