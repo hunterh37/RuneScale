@@ -116,6 +116,7 @@ struct ConnectionView: View {
         case .rateLimited: "dropped (too fast)"
         case .notLoggedIn: "not logged in"
         case .widgetHidden: "open the inventory or equipment tab in game"
+        case .noMenu: "game menu already closed"
         case .unknown: "unknown result"
         }
     }

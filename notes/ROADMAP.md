@@ -94,7 +94,8 @@ pathing, hit roll). No gesture sends repeated or timed clicks.
 - [x] Worn models: EQUIP_MODEL streams inventory models per slot; `EquipmentRig` puts the weapon in
       the sword hand, shield in the off hand, gloves on both hands, amulet/body/cape/legs/boots from the
       head pose (`BodyLayout`), helm hidden. Model axis alignment needs live tuning per item
-- [~] Backpack slot tap = WIDGET_CLICK (inventory and equipment, tab must be open; ACK 5 otherwise)
+- [x] Backpack slot tap = WIDGET_CLICK (inventory and equipment, tab must be open; ACK 5 shows a
+      hint to open the tab from the hand menu, no auto tab switch)
 - [ ] Equipment on body: helm at head, shield on off-hand; grab to remove = WIDGET_CLICK on
       equipment group 387
 - [ ] Spells: palm-up summons spellbook ring, pinch a rune icon then point at target = cast

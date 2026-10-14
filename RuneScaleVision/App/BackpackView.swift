@@ -21,6 +21,10 @@ struct BackpackView: View {
                     Spacer()
                     Button("Close", systemImage: "xmark", action: onClose).labelStyle(.iconOnly)
                 }
+                if model.lastAck?.result == .widgetHidden {
+                    Text("Open the \(showEquipment ? "Worn" : "Backpack") tab from the hand menu first")
+                        .font(.caption).foregroundStyle(.yellow)
+                }
                 if showEquipment {
                     grid(model.equipment, columns: 3, kind: .equipment)
                 } else {
