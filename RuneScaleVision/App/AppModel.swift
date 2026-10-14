@@ -11,14 +11,27 @@ final class AppModel {
 
     let client = StreamClient()
     let browser = ServiceBrowser()
-    var host = UserDefaults.standard.string(forKey: "host") ?? ""
-    var port = UserDefaults.standard.string(forKey: "port") ?? "43595"
-    var token = UserDefaults.standard.string(forKey: "token") ?? ""
+    var host = UserDefaults.standard.string(forKey: "host") ?? "" {
+        didSet { UserDefaults.standard.set(host, forKey: "host") }
+    }
+    var port = UserDefaults.standard.string(forKey: "port") ?? "43595" {
+        didSet { UserDefaults.standard.set(port, forKey: "port") }
+    }
+    var token = UserDefaults.standard.string(forKey: "token") ?? "" {
+        didSet { UserDefaults.standard.set(token, forKey: "token") }
+    }
     /// 1.0 = one OSRS tile per meter (life size, player about 1.8 m tall).
     var lifeSize: Double = UserDefaults.standard.object(forKey: "lifeSize") as? Double ?? 1.0 {
         didSet {
             UserDefaults.standard.set(lifeSize, forKey: "lifeSize")
             scenes.forEach { $0.applyScale() }
+        }
+    }
+    /// Tiles from the player beyond which terrain and objects are hidden. Saved across launches.
+    var renderDistance: Double = UserDefaults.standard.object(forKey: "renderDistance") as? Double ?? 32 {
+        didSet {
+            UserDefaults.standard.set(renderDistance, forKey: "renderDistance")
+            scenes.forEach { $0.applyRenderDistance() }
         }
     }
     var immersiveOpen = false
@@ -41,6 +54,10 @@ final class AppModel {
     var equipment = RSProtocol.Container(kind: .equipment, ids: Array(repeating: -1, count: 14), quantities: Array(repeating: 0, count: 14))
     var itemIcons: [Int32: CGImage] = [:]
     var backpackOpen = false
+    /// Local player model; hidden by default since the viewer stands inside it.
+    var showLocalPlayer: Bool = UserDefaults.standard.object(forKey: "showLocalPlayer") as? Bool ?? false {
+        didSet { UserDefaults.standard.set(showLocalPlayer, forKey: "showLocalPlayer") }
+    }
     var handGestures: Bool = UserDefaults.standard.object(forKey: "handGestures") as? Bool ?? true {
         didSet { UserDefaults.standard.set(handGestures, forKey: "handGestures") }
     }
@@ -54,34 +71,135 @@ final class AppModel {
     private var scenes: [WorldScene] = []
 
     init() {
-        client.onMessage = { [weak self] msg in
-            guard let self else { return }
-            if case .inputAck(let a) = msg { self.lastAck = a; return }
-            if case .uiFrame(let f) = msg { self.applyInterface(f); return }
-            if case .container(let c) = msg {
-                if c.kind == .inventory { self.inventory = c } else { self.equipment = c }
-                return
-            }
-            if case .itemIcon(let id, let png) = msg {
-                if let src = CGImageSourceCreateWithData(png as CFData, nil),
-                   let img = CGImageSourceCreateImageAtIndex(src, 0, nil) { self.itemIcons[id] = img }
-                return
-            }
-            self.scenes.forEach { $0.apply(msg) }
-            if case .equipModel(let slot, _, let meshId) = msg, let scene = self.scenes.first {
-                self.rig.set(slot: slot, meshId: meshId, scene: scene)
-            }
-        }
+        client.onMessage = { [weak self] msg in self?.handle(msg) }
         browser.start()
+        loadLaunchReplay()
+    }
+
+    private func handle(_ msg: RSProtocol.Message) {
+        if case .inputAck(let a) = msg { self.lastAck = a; return }
+        if case .uiFrame(let f) = msg { self.applyInterface(f); return }
+        if case .container(let c) = msg {
+            if c.kind == .inventory { self.inventory = c } else { self.equipment = c }
+            return
+        }
+        if case .itemIcon(let id, let png) = msg {
+            if let src = CGImageSourceCreateWithData(png as CFData, nil),
+               let img = CGImageSourceCreateImageAtIndex(src, 0, nil) { self.itemIcons[id] = img }
+            return
+        }
+        record(msg)
+        for k in pendingMsgs.keys { pendingMsgs[k]?.append(msg) }
+        self.scenes.forEach { $0.apply(msg) }
+        if case .equipModel(let slot, _, let meshId) = msg, let scene = self.scenes.first {
+            self.rig.set(slot: slot, meshId: meshId, scene: scene)
+        }
+    }
+
+    // MARK: Offline replay (simulator harness)
+
+    /// Messages fed to every scene instead of the network. Set by `-replay <path|mock|mock-clean>`.
+    private(set) var replay: [RSProtocol.Message]?
+    var replayName: String?
+    var replayAudit: ColorAudit.Report?
+    /// View opened at launch with `-replayView immersive|tabletop|none` (default immersive).
+    var replayAutoOpen: String?
+
+    private func loadLaunchReplay() {
+        let args = ProcessInfo.processInfo.arguments
+        func value(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        let env = ProcessInfo.processInfo.environment
+        guard let src = value("-replay") ?? env["RUNESCALE_REPLAY"] else { return }
+        loadReplay(src)
+        if replay != nil { replayAutoOpen = value("-replayView") ?? "immersive" }
+    }
+
+    /// `mock` = synthetic scene with legacy white-texture rows, `mock-clean` = without them, else a .rsrec path.
+    func loadReplay(_ src: String) {
+        let msgs: [RSProtocol.Message]
+        switch src {
+        case "mock": msgs = MockWorld.messages(legacy: true)
+        case "mock-clean": msgs = MockWorld.messages(legacy: false)
+        default:
+            let path = (src as NSString).expandingTildeInPath
+            guard let data = FileManager.default.contents(atPath: path),
+                  let m = try? Recording.messages(from: data) else {
+                print("[RuneScale] replay: cannot read \(path)")
+                return
+            }
+            msgs = m
+        }
+        client.disconnect()
+        replay = msgs
+        replayName = src
+        replayAudit = ColorAudit.report(msgs)
+        if let a = replayAudit {
+            print("[RuneScale] replay \(src): \(msgs.count) messages, \(a.meshes) meshes (\(a.whiteMeshes) near-white), \(a.tiles) tiles (\(a.whiteTiles) near-white)")
+        }
+        worldLog = []
+        scenes.forEach { s in s.clear(); msgs.forEach(s.apply) }
+        msgs.forEach { m in
+            if case .container = m { handle(m) }
+            if case .itemIcon = m { handle(m) }
+        }
+    }
+
+    func stopReplay() {
+        replay = nil
+        replayName = nil
+        replayAudit = nil
+        scenes.forEach { $0.clear() }
+    }
+
+    /// World messages since the last HELLO/RESET; seeds scenes opened mid-session without a reconnect.
+    private var worldLog: [RSProtocol.Message] = []
+    private var seedTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    /// Live messages that arrive while a scene is still seeding.
+    private var pendingMsgs: [ObjectIdentifier: [RSProtocol.Message]] = [:]
+    private static let seedBatch = 40
+
+    private func record(_ msg: RSProtocol.Message) {
+        switch msg {
+        case .hello, .reset: worldLog = [msg]
+        case .frame:
+            if let i = worldLog.lastIndex(where: { if case .frame = $0 { true } else { false } }) { worldLog.remove(at: i) }
+            worldLog.append(msg)
+        default: worldLog.append(msg)
+        }
     }
 
     func register(_ scene: WorldScene) {
         guard !scenes.contains(where: { $0 === scene }) else { return }
-        scenes.append(scene)
-        if client.isConnected { client.reconnect() } // server resends everything on connect
+        let seed = replay ?? worldLog
+        let id = ObjectIdentifier(scene)
+        pendingMsgs[id] = []
+        // Mesh building is synchronous on main; spreading it over frames avoids the RealityKit commit watchdog.
+        seedTasks[id] = Task { @MainActor [weak self, weak scene] in
+            var i = 0
+            while i < seed.count {
+                guard let scene, !Task.isCancelled else { return }
+                let end = min(i + Self.seedBatch, seed.count)
+                seed[i..<end].forEach(scene.apply)
+                i = end
+                await Task.yield()
+                try? await Task.sleep(for: .milliseconds(8))
+            }
+            guard let self, let scene, !Task.isCancelled else { return }
+            self.seedTasks[id] = nil
+            self.pendingMsgs.removeValue(forKey: id)?.forEach(scene.apply)
+            self.scenes.append(scene)
+            if self.replay != nil, let first = self.scenes.first {
+                seed.forEach { if case .equipModel(let slot, _, let mid) = $0 { self.rig.set(slot: slot, meshId: mid, scene: first) } }
+            }
+        }
     }
 
     func unregister(_ scene: WorldScene) {
+        seedTasks.removeValue(forKey: ObjectIdentifier(scene))?.cancel()
+        pendingMsgs.removeValue(forKey: ObjectIdentifier(scene))
         scenes.removeAll { $0 === scene }
     }
 
@@ -124,12 +242,14 @@ final class AppModel {
         UserDefaults.standard.set(port, forKey: "port")
         UserDefaults.standard.set(token, forKey: "token")
         guard let p = UInt16(port) else { return }
+        replay = nil
         scenes.forEach { $0.clear() }
         client.connect(.manual(host: host, port: p), token: token)
     }
 
     func connect(service: ServiceBrowser.Service) {
         UserDefaults.standard.set(token, forKey: "token")
+        replay = nil
         scenes.forEach { $0.clear() }
         client.connect(.bonjour(service.endpoint), token: token)
     }

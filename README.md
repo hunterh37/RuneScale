@@ -40,3 +40,15 @@ open RuneScaleVision.xcodeproj   # scheme RuneScale, set your team, run on devic
    Life size 1.0 = one tile per meter. Open tabletop for a volume view.
 
 Tests: `xcodebuild -scheme RuneScale -destination 'platform=visionOS Simulator,name=Apple Vision Pro' test`.
+
+## Replay harness (simulator)
+
+Plugin option Record stream writes `~/.runelite/runescale/capture-<time>.rsrec` (UI_FRAME skipped).
+Launch the headset app with `-replay <path>`, `-replay mock` (synthetic scene plus legacy white-texture
+rows for comparison) or `-replay mock-clean`; `-replayView immersive|tabletop|none` picks the opened view.
+
+```
+xcrun simctl launch --console-pty "Apple Vision Pro" org.oldschool.runescape.runescale -replay ~/.runelite/runescale/capture-X.rsrec
+```
+
+The console prints a ColorAudit line (near-white meshes and tiles); the Replay section shows the same counts.

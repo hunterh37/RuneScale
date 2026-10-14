@@ -42,6 +42,10 @@ public interface RuneScaleConfig extends Config
 	@Range(min = 320, max = 2560)
 	default int interfaceWidth() { return 1280; }
 
+	@ConfigItem(keyName = "recordStream", name = "Record stream",
+		description = "Write the scene stream to .runelite/runescale/capture-*.rsrec for headset replay (-replay <path>)", position = 9)
+	default boolean recordStream() { return false; }
+
 	@ConfigItem(keyName = "token", name = "", description = "", hidden = true)
 	default String token() { return ""; }
 }

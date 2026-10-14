@@ -6,7 +6,8 @@ import QuartzCore
 /// A tap clicks the matching canvas pixel; "Right click" makes the next tap a right click.
 struct InterfacePanel: View {
     @Environment(AppModel.self) private var model
-    let width: CGFloat
+    /// nil fills its window.
+    var width: CGFloat? = nil
     var onRecenter: (() -> Void)?
 
     var body: some View {
@@ -27,7 +28,8 @@ struct InterfacePanel: View {
             }
             .padding(18)
             .frame(width: width)
-            .glassBackgroundEffect()
+        } else {
+            Text("Interface hidden (Show interface panel in settings)").foregroundStyle(.secondary).padding()
         }
     }
 

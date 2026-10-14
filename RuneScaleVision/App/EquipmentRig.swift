@@ -31,7 +31,15 @@ final class EquipmentRig {
         model.scale = .init(repeating: s)
         model.position = -b.center * s
         // weapons: longest axis along the blade (-z of the holder)
-        if slot == .weapon { model.orientation = Self.alignLongest(b.extents, to: [0, 0, -1]); model.position = model.orientation.act(model.position) }
+        if slot == .weapon {
+            // hand holds the hilt: blade (hilt -> tip) along -z, grip ~9% of length in from the pommel
+            let axis = Self.longestAxis(b.extents)
+            let sign = Self.hiltSign(res, center: b.center, axis: axis)
+            let half = simd_dot(b.extents, axis) / 2
+            model.orientation = simd_quatf(from: axis * -sign, to: [0, 0, -1])
+            let gripLocal = b.center + axis * sign * half * 0.82
+            model.position = -model.orientation.act(gripLocal * s)
+        }
         let holder = Entity()
         holder.addChild(model)
         root.addChild(holder)
@@ -72,7 +80,33 @@ final class EquipmentRig {
         let glove = swordSide ? slots[.gloves] : gloveCopy
         glove?.isEnabled = a.isTracked
         glove?.position = p
-        glove?.orientation = grip
+        // OSRS models are Y-up; turn the ring axis onto the joint's x (forearm) axis.
+        glove?.orientation = grip * simd_quatf(angle: -.pi / 2, axis: [0, 0, 1])
+    }
+
+    static func longestAxis(_ e: SIMD3<Float>) -> SIMD3<Float> {
+        e.x >= e.y && e.x >= e.z ? [1, 0, 0] : e.y >= e.z ? [0, 1, 0] : [0, 0, 1]
+    }
+
+    /// +1 when the hilt is at the +axis end. The guard makes the hilt end wider than the
+    /// blade near the tip, so compare cross-section spread in the 10-35% bands from each end.
+    static func hiltSign(_ res: MeshResource, center: SIMD3<Float>, axis: SIMD3<Float>) -> Float {
+        var pts: [SIMD3<Float>] = []
+        for m in res.contents.models { for part in m.parts { pts.append(contentsOf: part.positions.elements) } }
+        guard pts.count > 8 else { return 1 }
+        let ts = pts.map { simd_dot($0 - center, axis) }
+        guard let lo = ts.min(), let hi = ts.max(), hi > lo else { return 1 }
+        func spread(_ a: Float, _ b: Float) -> Float {
+            let band = zip(pts, ts).filter { $0.1 >= a && $0.1 <= b }.map { ($0.0 - center) - axis * $0.1 }
+            guard band.count > 1 else { return 0 }
+            var mn = band[0], mx = band[0]
+            for v in band { mn = simd_min(mn, v); mx = simd_max(mx, v) }
+            return simd_length(mx - mn)
+        }
+        let len = hi - lo
+        let low = spread(lo + len * 0.1, lo + len * 0.35)
+        let high = spread(hi - len * 0.35, hi - len * 0.1)
+        return high > low ? 1 : -1
     }
 
     static func alignLongest(_ e: SIMD3<Float>, to dir: SIMD3<Float>) -> simd_quatf {

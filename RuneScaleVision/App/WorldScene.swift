@@ -26,6 +26,10 @@ final class WorldScene {
     private(set) var actorState: [UInt32: RSProtocol.Actor] = [:]
     private var playerTarget = SIMD3<Float>.zero
     private var hasPlayer = false
+    /// Scene-local XZ center per cullable entity (statics and terrain).
+    private var cullCenters: [ObjectIdentifier: SIMD2<Float>] = [:]
+    private var playerXZ = SIMD2<Float>.zero
+    private var lastCullTile = SIMD2<Int32>(.max, .max)
     private static let maxTransient = 800
 
     private lazy var material: RealityKit.Material = Self.makeMaterial()
@@ -52,6 +56,7 @@ final class WorldScene {
         world.children.removeAll()
         meshes.removeAll(); transientOrder.removeAll()
         statics.removeAll(); terrain.removeAll(); actors.removeAll()
+        cullCenters.removeAll(); cullSlack.removeAll(); lastCullTile = .init(.max, .max)
         hasPlayer = false
     }
 
@@ -69,12 +74,13 @@ final class WorldScene {
                 let e = ModelEntity(mesh: res, materials: [material])
                 world.addChild(e)
                 terrain.append(e)
+                track(e)
                 Self.makeTappable(e, exact: res)
             }
         case .staticAdd(let list):
             for inst in list { placeStatic(inst) }
         case .staticRemove(let ids):
-            for id in ids { statics.removeValue(forKey: id)?.removeFromParent() }
+            for id in ids { if let e = statics.removeValue(forKey: id) { untrack(e) } }
         case .frame(let f):
             applyFrame(f)
         case .inputAck, .uiFrame, .container, .itemIcon, .equipModel:
@@ -97,7 +103,7 @@ final class WorldScene {
     }
 
     private func placeStatic(_ inst: RSProtocol.Instance) {
-        statics.removeValue(forKey: inst.id)?.removeFromParent()
+        if let old = statics.removeValue(forKey: inst.id) { untrack(old) }
         guard let res = meshes[inst.meshId] else { return }
         let e = ModelEntity(mesh: res, materials: [material])
         if inst.id < 0 {
@@ -108,6 +114,7 @@ final class WorldScene {
         }
         world.addChild(e)
         statics[inst.id] = e
+        track(e)
         if inst.id < 0 { Self.makeTappable(e, exact: res) } else { Self.makeTappable(e, bounds: res) }
     }
 
@@ -123,6 +130,10 @@ final class WorldScene {
             hasPlayer = true
         }
 
+        playerXZ = [player.x, player.z]
+        let tile = SIMD2<Int32>(Int32(player.x.rounded(.down)), Int32(player.z.rounded(.down)))
+        if tile != lastCullTile { lastCullTile = tile; applyRenderDistance() }
+
         var seen = Set<UInt32>()
         actorState = Dictionary(f.actors.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         for a in f.actors {
@@ -130,12 +141,15 @@ final class WorldScene {
             seen.insert(a.key)
             let pos = Coordinates.point(x: Float(a.x), y: Float(a.y), z: Float(a.z), metersPerUnit: s)
             let t = Transform(rotation: simd_quatf(angle: Coordinates.yaw(orientation: a.orientation), axis: [0, 1, 0]), translation: pos)
+            let visible = a.kind != .local || UserDefaults.standard.object(forKey: "showLocalPlayer") as? Bool ?? false
             if let e = actors[a.key] {
+                e.isEnabled = visible
                 if e.model?.mesh !== res { e.model?.mesh = res }
                 e.move(to: t, relativeTo: world, duration: 0.08, timingFunction: .linear)
             } else {
                 let e = ModelEntity(mesh: res, materials: [material])
                 e.transform = t
+                e.isEnabled = visible
                 world.addChild(e)
                 actors[a.key] = e
                 Self.makeTappable(e, bounds: res)
@@ -145,6 +159,36 @@ final class WorldScene {
             e.removeFromParent()
             actors.removeValue(forKey: key)
         }
+    }
+
+    private var renderRadius: Float { Float(model?.renderDistance ?? 32) } // 1 tile = 1 scene meter
+
+    private func track(_ e: ModelEntity) {
+        let b = e.visualBounds(relativeTo: world)
+        guard !b.isEmpty else { return }
+        let c = SIMD2(b.center.x, b.center.z)
+        cullCenters[ObjectIdentifier(e)] = c
+        // large entities (terrain chunks) use their half-size as slack
+        let slack = max(b.extents.x, b.extents.z) / 2
+        e.isEnabled = simd_distance(c, playerXZ) <= renderRadius + slack
+        if slack > 0 { cullSlack[ObjectIdentifier(e)] = slack }
+    }
+    private func untrack(_ e: Entity) {
+        cullCenters.removeValue(forKey: ObjectIdentifier(e)); cullSlack.removeValue(forKey: ObjectIdentifier(e))
+        e.removeFromParent()
+    }
+    private var cullSlack: [ObjectIdentifier: Float] = [:]
+
+    func applyRenderDistance() {
+        let r = renderRadius
+        func update(_ e: Entity) {
+            let id = ObjectIdentifier(e)
+            guard let c = cullCenters[id] else { return }
+            let on = simd_distance(c, playerXZ) <= r + (cullSlack[id] ?? 0)
+            if e.isEnabled != on { e.isEnabled = on }
+        }
+        terrain.forEach(update)
+        statics.values.forEach(update)
     }
 
     func meshResource(_ id: Int64) -> MeshResource? { meshes[id] }

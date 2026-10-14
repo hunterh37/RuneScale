@@ -36,6 +36,7 @@ class SceneCapture
 	private static final int MAX_TRANSIENT = 4096;
 
 	private final Client client;
+	private final TextureColors textures;
 	private final Set<Long> sentMeshes = new HashSet<>();
 	private final Map<Long, Protocol.Instance> statics = new HashMap<>();
 	private final Map<Model, Long> idCache = new IdentityHashMap<>();
@@ -45,6 +46,7 @@ class SceneCapture
 	SceneCapture(Client client)
 	{
 		this.client = client;
+		this.textures = new TextureColors(client.getTextureProvider());
 	}
 
 	void invalidate()
@@ -153,10 +155,11 @@ class SceneCapture
 			pt.heights[1] = h[z][x + 1][y];
 			pt.heights[2] = h[z][x + 1][y + 1];
 			pt.heights[3] = h[z][x][y + 1];
-			pt.colors[0] = JagexColor.toRgb(paint.getSwColor());
-			pt.colors[1] = JagexColor.toRgb(paint.getSeColor());
-			pt.colors[2] = JagexColor.toRgb(paint.getNeColor());
-			pt.colors[3] = JagexColor.toRgb(paint.getNwColor());
+			int tex = paint.getTexture();
+			pt.colors[0] = faceRgb(paint.getSwColor(), tex, textures);
+			pt.colors[1] = faceRgb(paint.getSeColor(), tex, textures);
+			pt.colors[2] = faceRgb(paint.getNeColor(), tex, textures);
+			pt.colors[3] = faceRgb(paint.getNwColor(), tex, textures);
 			terrain.add(pt);
 		}
 		SceneTileModel tm = t.getSceneTileModel();
@@ -220,7 +223,7 @@ class SceneCapture
 		}
 		else
 		{
-			Protocol.Mesh m = modelMesh(model, 0);
+			Protocol.Mesh m = modelMesh(model, 0, textures);
 			if (m == null) return;
 			sendMesh(m, out);
 			meshId = m.id;
@@ -272,7 +275,7 @@ class SceneCapture
 		if (p == null || p.distanceTo(center) > maxDist) return;
 		Model model = a.getModel();
 		if (model == null) return;
-		Protocol.Mesh m = modelMesh(model, Protocol.MESH_FLAG_TRANSIENT);
+		Protocol.Mesh m = modelMesh(model, Protocol.MESH_FLAG_TRANSIENT, textures);
 		if (m == null) return;
 		sendMesh(m, out);
 		Protocol.Actor pa = new Protocol.Actor();
@@ -297,17 +300,42 @@ class SceneCapture
 
 	static Protocol.Mesh modelMesh(Model model, int flags)
 	{
+		return modelMesh(model, flags, null);
+	}
+
+	static Protocol.Mesh modelMesh(Model model, int flags, TextureColors tex)
+	{
 		int vc = model.getVerticesCount(), fc = model.getFaceCount();
 		if (vc <= 0 || fc <= 0 || vc > 65535) return null;
 		float[] vx = model.getVerticesX(), vy = model.getVerticesY(), vz = model.getVerticesZ();
 		int[] i1 = model.getFaceIndices1(), i2 = model.getFaceIndices2(), i3 = model.getFaceIndices3();
 		int[] c1 = model.getFaceColors1(), c2 = model.getFaceColors2(), c3 = model.getFaceColors3();
 		byte[] trans = model.getFaceTransparencies();
-		return build(vc, fc, vx, vy, vz, i1, i2, i3, c1, c2, c3, trans, flags);
+		short[] ft = tex == null ? null : model.getFaceTextures();
+		return build(vc, fc, vx, vy, vz, i1, i2, i3, c1, c2, c3, trans, flags, ft, tex);
 	}
 
 	static Protocol.Mesh build(int vc, int fc, float[] vx, float[] vy, float[] vz, int[] i1, int[] i2, int[] i3,
 		int[] c1, int[] c2, int[] c3, byte[] trans, int flags)
+	{
+		return build(vc, fc, vx, vy, vz, i1, i2, i3, c1, c2, c3, trans, flags, null, null);
+	}
+
+	/**
+	 * Face color as RGB. Untextured: packed HSL. Textured (texture id >= 0): the color holds
+	 * lightness only, so the texture's average color is shaded by it; a null {@code tex}
+	 * resolver uses {@link TextureColors#FALLBACK}.
+	 */
+	static int faceRgb(int color, int texture, TextureColors tex)
+	{
+		if (texture < 0) return JagexColor.toRgb(color);
+		int base = tex == null ? TextureColors.FALLBACK : tex.average(texture);
+		return TextureColors.shade(base, color);
+	}
+
+	/** {@code faceTex} is per-face texture ids (-1 none) or null; textured faces resolve through {@code tex}. */
+	static Protocol.Mesh build(int vc, int fc, float[] vx, float[] vy, float[] vz, int[] i1, int[] i2, int[] i3,
+		int[] c1, int[] c2, int[] c3, byte[] trans, int flags, short[] faceTex, TextureColors tex)
 	{
 		int visible = 0;
 		for (int f = 0; f < fc; f++) if (c3[f] != -2) visible++;
@@ -331,11 +359,12 @@ class SceneCapture
 			m.indices[o * 3] = i1[f];
 			m.indices[o * 3 + 1] = i2[f];
 			m.indices[o * 3 + 2] = i3[f];
-			int a = JagexColor.toRgb(c1[f]);
+			int t = faceTex != null && f < faceTex.length ? faceTex[f] : -1;
+			int a = faceRgb(c1[f], t, tex);
 			boolean flat = c3[f] == -1;
 			m.colors[o * 3] = a;
-			m.colors[o * 3 + 1] = flat ? a : JagexColor.toRgb(c2[f]);
-			m.colors[o * 3 + 2] = flat ? a : JagexColor.toRgb(c3[f]);
+			m.colors[o * 3 + 1] = flat ? a : faceRgb(c2[f], t, tex);
+			m.colors[o * 3 + 2] = flat ? a : faceRgb(c3[f], t, tex);
 			m.alpha[o] = (byte) (trans == null ? 255 : 255 - (trans[f] & 0xFF));
 			o++;
 		}
@@ -360,7 +389,14 @@ class SceneCapture
 		}
 		int[] c3 = new int[fc];
 		for (int i = 0; i < fc; i++) c3[i] = ca[i] == HIDDEN ? -2 : cc[i];
-		return build(vc, fc, x, y, z, fx, fy, fz, ca, cb, c3, null, 0);
+		int[] tt = tm.getTriangleTextureId();
+		short[] ft = null;
+		if (tt != null)
+		{
+			ft = new short[fc];
+			for (int i = 0; i < fc; i++) ft[i] = (short) (i < tt.length ? tt[i] : -1);
+		}
+		return build(vc, fc, x, y, z, fx, fy, fz, ca, cb, c3, null, 0, ft, textures);
 	}
 
 	private static short clamp(float f)

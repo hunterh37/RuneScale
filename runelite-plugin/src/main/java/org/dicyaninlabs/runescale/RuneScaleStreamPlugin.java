@@ -4,6 +4,9 @@ import com.google.inject.Provides;
 import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
 import java.net.InetAddress;
 import java.security.SecureRandom;
 import javax.inject.Inject;
@@ -26,6 +29,7 @@ import net.runelite.client.plugins.PluginDescriptor;
 import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.NavigationButton;
+import net.runelite.client.RuneLite;
 
 /**
  * Streams nearby scene geometry to a paired headset on the LAN.
@@ -59,6 +63,8 @@ public class RuneScaleStreamPlugin extends Plugin
 	private String token;
 	private int tickCounter;
 	private int clientTicks;
+	private volatile StreamRecorder recorder;
+	private boolean recordResync;
 
 	@Provides
 	RuneScaleConfig provideConfig(ConfigManager manager)
@@ -83,11 +89,13 @@ public class RuneScaleStreamPlugin extends Plugin
 		navButton = NavigationButton.builder().tooltip("RuneScale Stream").icon(icon()).priority(9).panel(panel).build();
 		clientToolbar.addNavigation(navButton);
 		startServer();
+		updateRecorder();
 	}
 
 	@Override
 	protected void shutDown()
 	{
+		stopRecorder();
 		stopServer();
 		clientToolbar.removeNavigation(navButton);
 		if (ui != null) ui.shutdown();
@@ -156,7 +164,50 @@ public class RuneScaleStreamPlugin extends Plugin
 			stopServer();
 			startServer();
 		}
+		if ("recordStream".equals(e.getKey())) updateRecorder();
 		if (capture != null) capture.invalidate();
+	}
+
+	/** Sends to headsets and, when recording, appends to the .rsrec file. */
+	private void emit(byte[] msg)
+	{
+		StreamServer s = server;
+		if (s != null) s.broadcast(msg);
+		StreamRecorder r = recorder;
+		if (r != null) r.write(msg);
+	}
+
+	private boolean active()
+	{
+		return server != null && (server.clientCount() > 0 || recorder != null);
+	}
+
+	private void updateRecorder()
+	{
+		if (config.recordStream() == (recorder != null)) return;
+		if (!config.recordStream())
+		{
+			stopRecorder();
+			return;
+		}
+		String name = "capture-" + new SimpleDateFormat("yyyyMMdd-HHmmss").format(new Date()) + ".rsrec";
+		try
+		{
+			recorder = new StreamRecorder(new File(new File(RuneLite.RUNELITE_DIR, "runescale"), name));
+			recordResync = true;
+			log.info("RuneScale recording to {}", recorder.file);
+		}
+		catch (Exception ex)
+		{
+			log.warn("RuneScale recording failed to start", ex);
+		}
+	}
+
+	private void stopRecorder()
+	{
+		StreamRecorder r = recorder;
+		recorder = null;
+		if (r != null) r.close();
 	}
 
 	@Subscribe
@@ -168,36 +219,37 @@ public class RuneScaleStreamPlugin extends Plugin
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged e)
 	{
-		if (server == null || items == null || server.clientCount() == 0) return;
-		items.send(e.getContainerId(), server::broadcast);
+		if (items == null || !active()) return;
+		items.send(e.getContainerId(), this::emit);
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick e)
 	{
-		if (server == null || capture == null || server.clientCount() == 0) return;
-		boolean resync = server.takeResync();
+		if (capture == null || !active()) return;
+		boolean resync = server.takeResync() | recordResync;
+		recordResync = false;
 		if (resync)
 		{
-			server.broadcast(Protocol.hello(config.radius()));
+			emit(Protocol.hello(config.radius()));
 			items.reset();
-			items.sendAll(server::broadcast);
+			items.sendAll(this::emit);
 		}
 		if (resync || ++tickCounter >= config.staticInterval())
 		{
 			tickCounter = 0;
-			capture.captureStatic(config.radius(), resync, server::broadcast);
+			capture.captureStatic(config.radius(), resync, this::emit);
 		}
 	}
 
 	@Subscribe
 	public void onClientTick(ClientTick e)
 	{
-		if (server == null || capture == null || server.clientCount() == 0) return;
-		if (ui != null && config.streamInterface()) ui.tick(config.interfaceFps(), config.interfaceWidth(), server::broadcast);
+		if (capture == null || !active()) return;
+		if (ui != null && config.streamInterface() && server.clientCount() > 0) ui.tick(config.interfaceFps(), config.interfaceWidth(), this::emit);
 		// ~25 Hz actor frames (client ticks run at 50 Hz)
 		if ((++clientTicks & 1) != 0) return;
-		capture.captureFrame(config.radius(), server::broadcast);
+		capture.captureFrame(config.radius(), this::emit);
 	}
 
 	private static BufferedImage icon()

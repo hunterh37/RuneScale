@@ -45,3 +45,6 @@ Interface: UI_FRAME carries the whole rendered canvas (side tabs, chatbox, minim
 bank) at up to `Interface FPS` (default 10), scaled to `Interface width` (default 1280), one frame in
 flight. canvasW/H are game canvas pixels; the headset maps a panel tap to those pixels and sends
 UI_CLICK. UI_CLICK uses the same Headset input gate, 100 ms floor and INPUT_ACK (2 = outside canvas).
+
+Recording (.rsrec): per message `u32 length` then the message bytes, plugin to headset types only.
+Textured faces: color is lightness only; the plugin sends texture average RGB scaled by lightness / 127.

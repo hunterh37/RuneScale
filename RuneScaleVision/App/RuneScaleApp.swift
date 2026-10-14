@@ -11,12 +11,19 @@ struct RuneScaleApp: App {
         }
         .defaultSize(width: 560, height: 720)
 
-        WindowGroup(id: "tabletop") {
+        Window("Tabletop", id: "tabletop") {
             TabletopView()
                 .environment(model)
         }
         .windowStyle(.volumetric)
         .defaultSize(width: 1.0, height: 0.6, depth: 1.0, in: .meters)
+
+        WindowGroup(id: "interface") {
+            InterfacePanel()
+                .environment(model)
+        }
+        .defaultSize(width: 1000, height: 760)
+        .windowResizability(.contentMinSize)
 
         ImmersiveSpace(id: AppModel.immersiveID) {
             ImmersiveView()

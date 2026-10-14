@@ -41,6 +41,7 @@ struct ConnectionView: View {
                 }
                 Section("Hands") {
                     Toggle("Hand gestures (swing, backpack)", isOn: $model.handGestures)
+                    Toggle("Show own player model", isOn: $model.showLocalPlayer)
                     Picker("Sword hand", selection: $model.swordHand) {
                         Text("Right").tag("right")
                         Text("Left").tag("left")
@@ -52,11 +53,29 @@ struct ConnectionView: View {
                     Text("\(model.client.messagesReceived) messages, \(model.client.bytesReceived / 1024) KB")
                         .foregroundStyle(.secondary)
                 }
+                Section("Replay") {
+                    if let name = model.replayName {
+                        Text("Replaying \(name)")
+                        if let a = model.replayAudit {
+                            Text("\(a.meshes) meshes, \(a.whiteMeshes) near-white; \(a.tiles) tiles, \(a.whiteTiles) near-white")
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("Stop replay") { model.stopReplay() }
+                    } else {
+                        Button("Load mock world") { model.loadReplay("mock") }
+                    }
+                }
                 Section("Scale") {
                     Slider(value: $model.lifeSize, in: 0.25...2.0, step: 0.05) {
                         Text("Life size")
                     }
                     Text(String(format: "%.2fx (1.00x = 1 tile per meter)", model.lifeSize)).foregroundStyle(.secondary)
+                }
+                Section("Render distance") {
+                    Slider(value: $model.renderDistance, in: 8...104, step: 4) {
+                        Text("Render distance")
+                    }
+                    Text("\(Int(model.renderDistance)) tiles").foregroundStyle(.secondary)
                 }
                 Section("View") {
                     Button(model.immersiveOpen ? "Exit room-scale" : "Enter room-scale") {
@@ -70,9 +89,20 @@ struct ConnectionView: View {
                         }
                     }
                     Button("Open tabletop") { openWindow(id: "tabletop") }
+                    Button("Open interface window") { openWindow(id: "interface") }
                 }
             }
             .navigationTitle("RuneScale")
+        }
+        .task {
+            guard let view = model.replayAutoOpen else { return }
+            model.replayAutoOpen = nil
+            switch view {
+            case "tabletop": openWindow(id: "tabletop")
+            case "immersive":
+                if case .opened = await openImmersiveSpace(id: AppModel.immersiveID) { model.immersiveOpen = true }
+            default: break
+            }
         }
     }
 
@@ -101,7 +131,7 @@ struct ConnectionView: View {
 struct ImmersiveView: View {
     @Environment(AppModel.self) private var model
     @State private var scene: WorldScene?
-    @State private var panel: Entity?
+    @Environment(\.openWindow) private var openWindow
     @State private var head = HeadTracker()
     @State private var hands = HandInput()
     @State private var backpack: Entity?
@@ -123,16 +153,7 @@ struct ImmersiveView: View {
                 content.add(bag)
                 backpack = bag
             }
-            if let ui = attachments.entity(for: "interface") {
-                ui.position = [0, 1.15, -0.75] // until the device pose is known
-                content.add(ui)
-                panel = ui
-            }
         } attachments: {
-            Attachment(id: "interface") {
-                InterfacePanel(width: 1000) { recenter() }
-                    .environment(model)
-            }
             Attachment(id: "backpack") {
                 BackpackView { model.backpackOpen = false }
                     .environment(model)
@@ -143,13 +164,8 @@ struct ImmersiveView: View {
             guard model.handGestures else { return }
             await hands.run(model: model, scene: { scene }, head: { head.pose() }, sword: { sword }, backpack: { backpack }, rig: model.rig)
         }
-        .task {
-            await head.start()
-            for _ in 0..<30 {
-                if recenter() { break }
-                try? await Task.sleep(for: .milliseconds(100))
-            }
-        }
+        .task { await head.start() }
+        .onAppear { if model.showInterface { openWindow(id: "interface") } }
         .onDisappear {
             if let scene { model.unregister(scene) }
             head.stop()
@@ -158,44 +174,22 @@ struct ImmersiveView: View {
         }
     }
 
-    /// Anchors the interface panel 0.7 m in front of the user, below eye level, facing them.
-    @discardableResult
-    private func recenter() -> Bool {
-        guard let panel, let m = head.pose() else { return false }
-        let h = SIMD3<Float>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
-        var f = -SIMD3<Float>(m.columns.2.x, 0, m.columns.2.z)
-        guard simd_length(f) > 1e-3 else { return false }
-        f = simd_normalize(f)
-        panel.position = h + f * 0.7 + [0, -0.28, 0]
-        let yaw = simd_quatf(angle: atan2(-f.x, -f.z), axis: [0, 1, 0])
-        panel.orientation = yaw * simd_quatf(angle: -0.3, axis: [1, 0, 0])
-        return true
-    }
 }
 
 struct TabletopView: View {
     @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
     @State private var scene: WorldScene?
 
     var body: some View {
-        RealityView { content, attachments in
+        RealityView { content in
             let s = WorldScene(mode: .tabletop, model: model)
             content.add(s.root)
             scene = s
             model.register(s)
-            if let ui = attachments.entity(for: "interface") {
-                // front edge of the volume, tilted up toward the viewer
-                ui.position = [0, -0.2, 0.36]
-                ui.orientation = simd_quatf(angle: -0.55, axis: [1, 0, 0])
-                content.add(ui)
-            }
-        } attachments: {
-            Attachment(id: "interface") {
-                InterfacePanel(width: 760, onRecenter: nil)
-                    .environment(model)
-            }
         }
         .modifier(TapToClick(model: model, scene: scene))
+        .onAppear { if model.showInterface { openWindow(id: "interface") } }
         .onDisappear { if let scene { model.unregister(scene) } }
     }
 }
