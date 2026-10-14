@@ -65,6 +65,44 @@ written in notes/RESEARCH.md. A Hub-eligible build ships with the flag compiled 
 - [ ] H.264 (VideoToolbox) instead of JPEG if bandwidth over 1 MB/s matters
 - [ ] Item drag (inventory rearrange): press, move, release sequence
 
+## M3.5 Hand tracking gestures (VR feel over click input)
+
+OSRS stays click based. Each physical gesture resolves to exactly one click (or one click plus one
+menu-row click) that the same gesture would need with a mouse; the plugin protocol stays CLICK,
+UI_CLICK, WIDGET_CLICK. Gestures pick the target; the game decides the outcome (attack speed,
+pathing, hit roll). No gesture sends repeated or timed clicks.
+
+- [ ] `HandTrackingProvider` session in the ImmersiveSpace (`NSHandsTrackingUsageDescription`),
+      joint poses per frame, fallback to `SpatialTapGesture` when tracking is lost or denied
+- [ ] `GestureRecognizer` (Core, unit-tested on recorded joint traces): pinch, pinch-hold, grab
+      (all fingertips to palm), release, point (index extended ray), swing (wrist speed over
+      1.5 m/s along an arc), palm-up, two-hand pinch; hysteresis and 250 ms debounce
+- [ ] `IntentMapper`: gesture + target to one action. Swing through or toward an NPC collider =
+      one left click on that NPC (Attack); point + pinch = click at ray hit; pinch-hold = right
+      click and menu (M2); grab on ground item = Take; grab on door/lever = top action
+- [ ] Target resolution: swing hit volume (capsule along the blade path), nearest attackable NPC
+      by angle, cancel when the top menu option is not Attack (needs MENU stream, M2)
+- [ ] Held weapon model: equipped weapon mesh (from equipment widget item id, M3 sprite/model
+      transfer) parented to the hand anchor; sword, bow, staff poses
+- [ ] Combat feedback: hand haptic substitute (spatial click sound), hit flash on the NPC from
+      HITSPLAT/actor events, swing trail; game attack cooldown shown as a ring on the weapon
+- [ ] Backpack: 3D bag anchored over the shoulder/hip (body anchor from device pose), reach behind
+      plus grab opens a 4x7 spatial inventory grid from the widget stream (M3, group 149)
+- [ ] Backpack actions: pinch an item = WIDGET_CLICK slot (eat, wield, drink); drag item onto an
+      NPC/object/item = Use (two clicks: item, then target); drop out of hand = Drop via menu row
+- [ ] Equipment on body: helm at head, shield on off-hand; grab to remove = WIDGET_CLICK on
+      equipment group 387
+- [ ] Spells: palm-up summons spellbook ring, pinch a rune icon then point at target = cast
+      (spell widget click, then target click); prayer ring on the off-hand wrist
+- [ ] Locomotion: point at ground + pinch = walk here; teleport-style arc preview of the tile
+- [ ] Settings: handedness, gesture set toggles, swing sensitivity, tap-only mode
+- [ ] Tests: GestureRecognizerTests on recorded traces, IntentMapperTests (gesture to click count)
+- [ ] Live verification: swing kills a chicken, eat food from backpack, wield from backpack,
+      use item on object, cast Wind Strike by gesture
+
+Dependencies: M2 menu stream (top option check, menu rows), M3 widget stream (item ids, slots,
+WIDGET_CLICK), equipped item model export (M5 textures).
+
 ## M4 Dialogs, bank, chat, keyboard
 
 - [ ] NPC dialog / options (widget groups 231, 217, 219) as headset panels, tap or number key
@@ -88,6 +126,9 @@ written in notes/RESEARCH.md. A Hub-eligible build ships with the flag compiled 
 - [ ] TestFlight build of RuneScale (org.oldschool.runescape.runescale)
 
 ## Open questions
+
+3. Gesture-to-click mapping must keep one human action per click (Jagex third-party rules); review
+   swing and Use-drag against the rules position before any public build.
 
 1. `dispatchEvent` on the canvas vs `java.awt.Robot`: canvas events work with the window unfocused;
    confirm the game accepts them on macOS (live test in M1).
