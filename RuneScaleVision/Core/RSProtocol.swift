@@ -58,6 +58,27 @@ public enum RSProtocol {
         case container(Container)
         case itemIcon(itemId: Int32, png: Data)
         case equipModel(slot: UInt8, itemId: Int32, meshId: Int64)
+        /// Open game right-click menu, rows top to bottom; empty rows = closed.
+        case menu(Menu)
+    }
+
+    public struct MenuRow: Sendable, Equatable {
+        public var option: String, target: String
+        public init(option: String, target: String) { self.option = option; self.target = target }
+    }
+
+    public struct Menu: Sendable, Equatable {
+        public var seq: UInt32
+        public var rows: [MenuRow]
+        public init(seq: UInt32, rows: [MenuRow]) { self.seq = seq; self.rows = rows }
+    }
+
+    /// Headset to plugin: left click row `index` (top = 0) of open menu `menuSeq`.
+    public static func encodeMenuSelect(seq: UInt32, menuSeq: UInt32, index: UInt8) -> Data {
+        var w: [UInt8] = [0x53, 0x52, version, 67]
+        for v in [seq, menuSeq] { for i in 0..<4 { w.append(UInt8((v >> (8 * UInt32(i))) & 0xFF)) } }
+        w.append(index)
+        return Data(w)
     }
 
     public enum ContainerKind: UInt8, Sendable { case inventory = 0, equipment = 1 }
@@ -83,7 +104,7 @@ public enum RSProtocol {
     public enum Button: UInt8, Sendable { case left = 0, right = 1 }
 
     public enum AckResult: UInt8, Sendable {
-        case ok = 0, disabled = 1, offscreen = 2, rateLimited = 3, notLoggedIn = 4, widgetHidden = 5, unknown = 255
+        case ok = 0, disabled = 1, offscreen = 2, rateLimited = 3, notLoggedIn = 4, widgetHidden = 5, noMenu = 6, unknown = 255
     }
 
     public struct InputAck: Sendable, Equatable {
@@ -205,6 +226,13 @@ public enum RSProtocol {
             let id = try r.i32()
             let n = Int(try r.u32())
             return .itemIcon(itemId: id, png: Data(try r.bytes(n)))
+        case 13:
+            let seq = try r.u32()
+            let n = Int(try r.u8())
+            var rows = [MenuRow]()
+            func str() throws -> String { String(decoding: try r.bytes(Int(try r.u16())), as: UTF8.self) }
+            for _ in 0..<n { rows.append(MenuRow(option: try str(), target: try str())) }
+            return .menu(Menu(seq: seq, rows: rows))
         default:
             throw DecodeError.unknownType(type)
         }

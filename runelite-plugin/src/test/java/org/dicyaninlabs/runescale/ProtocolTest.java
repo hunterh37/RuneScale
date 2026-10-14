@@ -176,4 +176,24 @@ public class ProtocolTest
 		assertEquals(4151, de.equip.itemId);
 		assertEquals(-77L, de.equip.meshId);
 	}
+
+	@Test
+	public void menuRoundTrip()
+	{
+		Protocol.Menu m = new Protocol.Menu();
+		m.seq = 4;
+		m.options = new String[]{"Attack", "Walk here", "Cancel"};
+		m.targets = new String[]{"Goblin  (level-2)", "", "é"};
+		Protocol.Decoded d = Protocol.decode(Protocol.menu(m));
+		assertEquals(Protocol.MENU, d.type);
+		assertEquals(4, d.menu.seq);
+		assertArrayEquals(m.options, d.menu.options);
+		assertArrayEquals(m.targets, d.menu.targets);
+		Protocol.MenuSelect s = new Protocol.MenuSelect();
+		s.seq = 9; s.menuSeq = 4; s.index = 2;
+		Protocol.Decoded ds = Protocol.decode(Protocol.menuSelect(s));
+		assertEquals(4, ds.menuSelect.menuSeq);
+		assertEquals(2, ds.menuSelect.index);
+		assertEquals(new java.awt.Point(150, 241), RemoteInput.menuRow(100, 200, 100, 1));
+	}
 }

@@ -15,6 +15,7 @@ import javax.jmdns.ServiceInfo;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
+import net.runelite.api.MenuEntry;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
@@ -30,6 +31,7 @@ import net.runelite.client.ui.ClientToolbar;
 import net.runelite.client.ui.DrawManager;
 import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.RuneLite;
+import net.runelite.client.util.Text;
 
 /**
  * Streams nearby scene geometry to a paired headset on the LAN.
@@ -65,6 +67,8 @@ public class RuneScaleStreamPlugin extends Plugin
 	private int clientTicks;
 	private volatile StreamRecorder recorder;
 	private boolean recordResync;
+	private boolean menuWasOpen;
+	private volatile int menuSeq;
 
 	@Provides
 	RuneScaleConfig provideConfig(ConfigManager manager)
@@ -110,6 +114,7 @@ public class RuneScaleStreamPlugin extends Plugin
 			(click, reply) -> input.handle(click, config.remoteInput(), reply),
 			(click, reply) -> input.handleUi(click, config.remoteInput(), reply),
 			(click, reply) -> input.handleWidget(click, config.remoteInput(), reply));
+		server.onMenuSelect = (m, reply) -> input.handleMenu(m, menuSeq, config.remoteInput(), reply);
 		server.start();
 		InetAddress lan = StreamServer.lanAddress();
 		if (config.bonjour())
@@ -246,10 +251,35 @@ public class RuneScaleStreamPlugin extends Plugin
 	public void onClientTick(ClientTick e)
 	{
 		if (capture == null || !active()) return;
+		syncMenu();
 		if (ui != null && config.streamInterface() && server.clientCount() > 0) ui.tick(config.interfaceFps(), config.interfaceWidth(), this::emit);
 		// ~25 Hz actor frames (client ticks run at 50 Hz)
 		if ((++clientTicks & 1) != 0) return;
 		capture.captureFrame(config.radius(), this::emit);
+	}
+
+	/** Sends the open right-click menu (top row first) when it opens, and an empty MENU when it closes. */
+	private void syncMenu()
+	{
+		boolean open = client.isMenuOpen();
+		if (open == menuWasOpen || server.clientCount() == 0) { menuWasOpen = open; return; }
+		menuWasOpen = open;
+		Protocol.Menu m = new Protocol.Menu();
+		if (open)
+		{
+			menuSeq++;
+			MenuEntry[] e = client.getMenuEntries();
+			m.options = new String[e.length];
+			m.targets = new String[e.length];
+			for (int i = 0; i < e.length; i++)
+			{
+				MenuEntry row = e[e.length - 1 - i]; // last entry is drawn at the top
+				m.options[i] = Text.removeTags(row.getOption());
+				m.targets[i] = Text.removeTags(row.getTarget());
+			}
+		}
+		m.seq = menuSeq;
+		server.broadcast(Protocol.menu(m));
 	}
 
 	private static BufferedImage icon()

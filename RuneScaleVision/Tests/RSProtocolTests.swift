@@ -111,4 +111,13 @@ final class RSProtocolTests: XCTestCase {
         XCTAssertEqual(Array(d[9..<13]), [0xBC, 0x02, 0, 0])
         XCTAssertEqual(Array(d[13..<17]), [0xE0, 0x01, 0, 0])
     }
+
+    func testMenu() throws {
+        var w = W(); w.header(13); w.u32(4); w.u8(2)
+        for str in ["Attack", "Goblin", "Cancel", ""] { let u = Array(str.utf8); w.u16(UInt16(u.count)); w.d.append(contentsOf: u) }
+        guard case .menu(let m) = try RSProtocol.decode(w.d) else { return XCTFail() }
+        XCTAssertEqual(m.seq, 4)
+        XCTAssertEqual(m.rows, [.init(option: "Attack", target: "Goblin"), .init(option: "Cancel", target: "")])
+        XCTAssertEqual(Array(RSProtocol.encodeMenuSelect(seq: 1, menuSeq: 4, index: 2)), [0x53, 0x52, 1, 67, 1, 0, 0, 0, 4, 0, 0, 0, 2])
+    }
 }

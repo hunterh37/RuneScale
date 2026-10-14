@@ -53,6 +53,10 @@ final class AppModel {
     /// Next interface tap is a right click (opens the game menu), then resets.
     var rightClickNext = false
     private var clickSeq: UInt32 = 0
+    /// Open game right-click menu mirrored from MENU; nil when closed.
+    var gameMenu: RSProtocol.Menu?
+    /// Where the world right click landed: the scene and a point in its `world` space.
+    var menuAnchor: (scene: ObjectIdentifier, point: SIMD3<Float>)?
     /// Inventory (28) and equipment (14) from CONTAINER; icons from ITEM_ICON by item id.
     var inventory = RSProtocol.Container(kind: .inventory, ids: Array(repeating: -1, count: 28), quantities: Array(repeating: 0, count: 28))
     var equipment = RSProtocol.Container(kind: .equipment, ids: Array(repeating: -1, count: 14), quantities: Array(repeating: 0, count: 14))
@@ -87,7 +91,16 @@ final class AppModel {
     }
 
     private func handle(_ msg: RSProtocol.Message) {
-        if case .inputAck(let a) = msg { self.lastAck = a; return }
+        if case .inputAck(let a) = msg {
+            self.lastAck = a
+            if a.result == .noMenu { gameMenu = nil }
+            return
+        }
+        if case .menu(let m) = msg {
+            gameMenu = m.rows.isEmpty ? nil : m
+            if gameMenu == nil { menuAnchor = nil }
+            return
+        }
         if case .uiFrame(let f) = msg { self.applyInterface(f); return }
         if case .container(let c) = msg {
             if c.kind == .inventory { self.inventory = c } else { self.equipment = c }
@@ -219,6 +232,23 @@ final class AppModel {
         guard inputEnabled, client.isConnected else { return }
         clickSeq &+= 1
         client.send(RSProtocol.encodeClick(seq: clickSeq, button: button, x: p.x, y: p.y, z: p.z))
+    }
+
+    /// One tap on the world: left click, or right click (game menu opens at `anchor`) when armed.
+    func worldTap(_ p: (x: Int32, y: Int32, z: Int32), scene: WorldScene, anchor: SIMD3<Float>) {
+        let right = rightClickNext
+        rightClickNext = false
+        if right { menuAnchor = (ObjectIdentifier(scene), anchor) }
+        click(p, button: right ? .right : .left)
+    }
+
+    /// Picks row `index` (top = 0) of the open game menu; the plugin left clicks that row.
+    func selectMenu(_ index: Int) {
+        guard let m = gameMenu, inputEnabled, client.isConnected, (0..<m.rows.count).contains(index) else { return }
+        clickSeq &+= 1
+        client.send(RSProtocol.encodeMenuSelect(seq: clickSeq, menuSeq: m.seq, index: UInt8(index)))
+        gameMenu = nil
+        menuAnchor = nil
     }
 
     /// One gesture = one click on an inventory or equipment slot.

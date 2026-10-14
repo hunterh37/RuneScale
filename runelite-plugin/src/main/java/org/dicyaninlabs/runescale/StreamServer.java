@@ -27,6 +27,8 @@ class StreamServer extends WebSocketServer
 	private final BiConsumer<Protocol.Click, Consumer<byte[]>> onClick;
 	private final BiConsumer<Protocol.UiClick, Consumer<byte[]>> onUiClick;
 	private final BiConsumer<Protocol.WidgetClick, Consumer<byte[]>> onWidgetClick;
+	/** Set after construction; null ignores MENU_SELECT. */
+	volatile BiConsumer<Protocol.MenuSelect, Consumer<byte[]>> onMenuSelect;
 
 	StreamServer(int port, String token, Runnable onChange, BiConsumer<Protocol.Click, Consumer<byte[]>> onClick,
 		BiConsumer<Protocol.UiClick, Consumer<byte[]>> onUiClick, BiConsumer<Protocol.WidgetClick, Consumer<byte[]>> onWidgetClick)
@@ -112,6 +114,7 @@ class StreamServer extends WebSocketServer
 		if (d.type == Protocol.CLICK) onClick.accept(d.click, reply);
 		else if (d.type == Protocol.UI_CLICK) onUiClick.accept(d.uiClick, reply);
 		else if (d.type == Protocol.WIDGET_CLICK) onWidgetClick.accept(d.widgetClick, reply);
+		else if (d.type == Protocol.MENU_SELECT && onMenuSelect != null) onMenuSelect.accept(d.menuSelect, reply);
 	}
 
 	@Override

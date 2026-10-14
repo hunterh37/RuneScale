@@ -24,6 +24,9 @@ public final class Protocol
 	public static final int ITEM_ICON = 11;
 	public static final int EQUIP_MODEL = 12;
 	public static final int WIDGET_CLICK = 66;
+	public static final int MENU = 13;
+	public static final int MENU_SELECT = 67;
+	public static final int ACK_NO_MENU = 6;
 	public static final int CONTAINER_INVENTORY = 0, CONTAINER_EQUIPMENT = 1;
 	public static final int ACK_WIDGET_HIDDEN = 5;
 	/** Headset to plugin. Only accepted when remote input is enabled. */
@@ -121,6 +124,19 @@ public final class Protocol
 	public static final class WidgetClick
 	{
 		public int seq, button, container, slot;
+	}
+
+	/** Open game right-click menu, rows top to bottom; empty = closed. */
+	public static final class Menu
+	{
+		public int seq;
+		public String[] options = new String[0], targets = new String[0];
+	}
+
+	/** Headset to plugin: left click row {@code index} (top = 0) of the open menu {@code menuSeq}. */
+	public static final class MenuSelect
+	{
+		public int seq, menuSeq, index;
 	}
 
 	public static final class Ack
@@ -256,6 +272,43 @@ public final class Protocol
 		return header(WIDGET_CLICK, 4 + 3).putInt(c.seq).put((byte) c.button).put((byte) c.container).put((byte) c.slot).array();
 	}
 
+	private static void str(ByteBuffer b, byte[] u)
+	{
+		b.putShort((short) u.length).put(u);
+	}
+
+	private static String str(ByteBuffer b)
+	{
+		byte[] u = new byte[b.getShort() & 0xFFFF];
+		b.get(u);
+		return new String(u, java.nio.charset.StandardCharsets.UTF_8);
+	}
+
+	public static byte[] menu(Menu m)
+	{
+		int n = Math.min(m.options.length, 255);
+		byte[][] o = new byte[n][], t = new byte[n][];
+		int body = 4 + 1;
+		for (int i = 0; i < n; i++)
+		{
+			o[i] = m.options[i].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			t[i] = m.targets[i].getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			body += 4 + o[i].length + t[i].length;
+		}
+		ByteBuffer b = header(MENU, body).putInt(m.seq).put((byte) n);
+		for (int i = 0; i < n; i++)
+		{
+			str(b, o[i]);
+			str(b, t[i]);
+		}
+		return b.array();
+	}
+
+	public static byte[] menuSelect(MenuSelect s)
+	{
+		return header(MENU_SELECT, 9).putInt(s.seq).putInt(s.menuSeq).put((byte) s.index).array();
+	}
+
 	/** Decoded message: type plus one populated payload. Used by tests and tooling. */
 	public static final class Decoded
 	{
@@ -275,6 +328,8 @@ public final class Protocol
 		public ItemIcon icon;
 		public WidgetClick widgetClick;
 		public EquipModel equip;
+		public Menu menu;
+		public MenuSelect menuSelect;
 	}
 
 	public static Decoded decode(byte[] data)
@@ -464,6 +519,31 @@ public final class Protocol
 				c.container = b.get() & 0xFF;
 				c.slot = b.get() & 0xFF;
 				d.widgetClick = c;
+				break;
+			}
+			case MENU:
+			{
+				Menu m = new Menu();
+				m.seq = b.getInt();
+				int n = b.get() & 0xFF;
+				m.options = new String[n];
+				m.targets = new String[n];
+				for (int i = 0; i < n; i++)
+				{
+					m.options[i] = str(b);
+					m.targets[i] = str(b);
+				}
+				d.menu = m;
+				break;
+			}
+			case MENU_SELECT:
+			{
+				if (b.remaining() < 9) throw new IllegalArgumentException("truncated menu select");
+				MenuSelect m = new MenuSelect();
+				m.seq = b.getInt();
+				m.menuSeq = b.getInt();
+				m.index = b.get() & 0xFF;
+				d.menuSelect = m;
 				break;
 			}
 			default:

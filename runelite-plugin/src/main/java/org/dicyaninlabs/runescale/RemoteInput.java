@@ -131,6 +131,44 @@ class RemoteInput
 		});
 	}
 
+	/**
+	 * Left click one row of the open right-click menu. Rows are top to bottom, matching MENU.
+	 * A stale menu (closed or reopened since the headset saw it) returns ACK_NO_MENU.
+	 */
+	void handleMenu(Protocol.MenuSelect m, int currentMenuSeq, boolean enabled, Consumer<byte[]> reply)
+	{
+		log.info("headset menu select #{} menu={} row={} enabled={}", m.seq, m.menuSeq, m.index, enabled);
+		if (!enabled)
+		{
+			reply.accept(ack(m.seq, Protocol.ACK_DISABLED, -1, -1));
+			return;
+		}
+		if (!takeSlot())
+		{
+			reply.accept(ack(m.seq, Protocol.ACK_RATE_LIMITED, -1, -1));
+			return;
+		}
+		clientThread.invoke(() ->
+		{
+			int n = client.getMenuEntries().length;
+			if (!client.isMenuOpen() || m.menuSeq != currentMenuSeq || m.index >= n)
+			{
+				reply.accept(ack(m.seq, Protocol.ACK_NO_MENU, -1, -1));
+				return;
+			}
+			java.awt.Point p = menuRow(client.getMenuX(), client.getMenuY(), client.getMenuWidth(), m.index);
+			java.awt.Point real = toRealCanvas(p.x, p.y);
+			SwingUtilities.invokeLater(() -> dispatch(client.getCanvas(), real.x, real.y, Protocol.BUTTON_LEFT));
+			reply.accept(ack(m.seq, Protocol.ACK_OK, p.x, p.y));
+		});
+	}
+
+	/** Center of menu row {@code index}: 19 px header, 15 px rows. */
+	static java.awt.Point menuRow(int menuX, int menuY, int menuWidth, int index)
+	{
+		return new java.awt.Point(menuX + menuWidth / 2, menuY + 19 + index * 15 + 7);
+	}
+
 	private synchronized boolean takeSlot()
 	{
 		long now = System.currentTimeMillis();

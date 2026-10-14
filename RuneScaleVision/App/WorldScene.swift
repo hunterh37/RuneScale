@@ -83,7 +83,7 @@ final class WorldScene {
             for id in ids { if let e = statics.removeValue(forKey: id) { untrack(e) } }
         case .frame(let f):
             applyFrame(f)
-        case .inputAck, .uiFrame, .container, .itemIcon, .equipModel:
+        case .inputAck, .uiFrame, .container, .itemIcon, .equipModel, .menu:
             break
         }
     }

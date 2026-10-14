@@ -140,6 +140,7 @@ struct ImmersiveView: View {
     @State private var handMenu: Entity?
     @State private var sword: Entity?
     @State private var skybox: Entity?
+    @State private var gameMenu: Entity?
 
     var body: some View {
         RealityView { content, attachments in
@@ -162,6 +163,11 @@ struct ImmersiveView: View {
                 content.add(bag)
                 backpack = bag
             }
+            if let gm = attachments.entity(for: "gameMenu") {
+                gm.isEnabled = false
+                content.add(gm)
+                gameMenu = gm
+            }
             if let menu = attachments.entity(for: "handMenu") {
                 menu.isEnabled = false
                 content.add(menu)
@@ -175,8 +181,12 @@ struct ImmersiveView: View {
             Attachment(id: "handMenu") {
                 HandMenuView().environment(model)
             }
+            Attachment(id: "gameMenu") {
+                GameMenuView().environment(model)
+            }
         }
         .modifier(TapToClick(model: model, scene: scene))
+        .modifier(GameMenuTracking(model: model, scene: scene, entity: gameMenu, lift: 0.5))
         .task {
             guard model.handGestures else { return }
             await hands.run(model: model, scene: { scene }, head: { head.pose() }, sword: { sword }, backpack: { backpack }, handMenu: { handMenu }, rig: model.rig)
@@ -198,21 +208,46 @@ struct TabletopView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.openWindow) private var openWindow
     @State private var scene: WorldScene?
+    @State private var gameMenu: Entity?
 
     var body: some View {
-        RealityView { content in
+        RealityView { content, attachments in
             let s = WorldScene(mode: .tabletop, model: model)
             content.add(s.root)
             scene = s
             model.register(s)
+            if let gm = attachments.entity(for: "gameMenu") {
+                gm.isEnabled = false
+                content.add(gm)
+                gameMenu = gm
+            }
+        } attachments: {
+            Attachment(id: "gameMenu") {
+                GameMenuView().environment(model)
+            }
         }
         .modifier(TapToClick(model: model, scene: scene))
+        .modifier(GameMenuTracking(model: model, scene: scene, entity: gameMenu, lift: 0.08))
         .onAppear { if model.showInterface { openWindow(id: "interface") } }
         .onDisappear { if let scene { model.unregister(scene) } }
     }
 }
 
-/// Tap on any scene entity sends one left click at that 3D point.
+/// Repositions the game menu attachment whenever the menu or its anchor changes.
+private struct GameMenuTracking: ViewModifier {
+    let model: AppModel
+    let scene: WorldScene?
+    let entity: Entity?
+    let lift: Float
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: model.gameMenu) { GameMenuPlacement.update(entity, model: model, scene: scene, lift: lift) }
+            .onChange(of: model.menuAnchor?.point) { GameMenuPlacement.update(entity, model: model, scene: scene, lift: lift) }
+    }
+}
+
+/// Tap on any scene entity sends one click at that 3D point; right click when armed.
 private struct TapToClick: ViewModifier {
     let model: AppModel
     let scene: WorldScene?
@@ -225,7 +260,7 @@ private struct TapToClick: ViewModifier {
                     guard let scene, Self.isInWorld(value.entity, scene.world) else { return }
                     let hit = value.convert(value.location3D, from: .local, to: scene.world)
                     let p = scene.clickPoint(for: value.entity, hit: hit)
-                    model.click(Coordinates.units(p, metersPerUnit: 1 / Coordinates.unitsPerTile), button: .left)
+                    model.worldTap(Coordinates.units(p, metersPerUnit: 1 / Coordinates.unitsPerTile), scene: scene, anchor: hit)
                 }
         )
     }
