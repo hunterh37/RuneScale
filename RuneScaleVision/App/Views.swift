@@ -137,6 +137,7 @@ struct ImmersiveView: View {
     @State private var head = HeadTracker()
     @State private var hands = HandInput()
     @State private var backpack: Entity?
+    @State private var handMenu: Entity?
     @State private var sword: Entity?
     @State private var skybox: Entity?
 
@@ -161,16 +162,24 @@ struct ImmersiveView: View {
                 content.add(bag)
                 backpack = bag
             }
+            if let menu = attachments.entity(for: "handMenu") {
+                menu.isEnabled = false
+                content.add(menu)
+                handMenu = menu
+            }
         } attachments: {
             Attachment(id: "backpack") {
                 BackpackView { model.backpackOpen = false }
                     .environment(model)
             }
+            Attachment(id: "handMenu") {
+                HandMenuView().environment(model)
+            }
         }
         .modifier(TapToClick(model: model, scene: scene))
         .task {
             guard model.handGestures else { return }
-            await hands.run(model: model, scene: { scene }, head: { head.pose() }, sword: { sword }, backpack: { backpack }, rig: model.rig)
+            await hands.run(model: model, scene: { scene }, head: { head.pose() }, sword: { sword }, backpack: { backpack }, handMenu: { handMenu }, rig: model.rig)
         }
         .task { await head.start() }
         .onChange(of: model.blackSkybox) { _, on in skybox?.isEnabled = on }

@@ -100,6 +100,8 @@ pathing, hit roll). No gesture sends repeated or timed clicks.
 - [ ] Spells: palm-up summons spellbook ring, pinch a rune icon then point at target = cast
       (spell widget click, then target click); prayer ring on the off-hand wrist
 - [ ] Locomotion: point at ground + pinch = walk here; teleport-style arc preview of the tile
+- [x] Hand menu: left palm toward eyes shows side tab bar plus cropped tab panel; taps click
+      the tab stone or panel pixel (`HandMenu.swift`)
 - [ ] Settings: handedness, gesture set toggles, swing sensitivity, tap-only mode
 - [x] Tests: GestureRecognizerTests on recorded traces, IntentMapperTests (gesture to click count)
 - [ ] Live verification: swing kills a chicken, eat food from backpack, wield from backpack,

@@ -58,6 +58,8 @@ final class AppModel {
     var equipment = RSProtocol.Container(kind: .equipment, ids: Array(repeating: -1, count: 14), quantities: Array(repeating: 0, count: 14))
     var itemIcons: [Int32: CGImage] = [:]
     var backpackOpen = false
+    /// Side tab last opened from the left-hand menu.
+    var selectedTab: GameTab?
     /// Local player model; hidden by default since the viewer stands inside it.
     var showLocalPlayer: Bool = UserDefaults.standard.object(forKey: "showLocalPlayer") as? Bool ?? false {
         didSet { UserDefaults.standard.set(showLocalPlayer, forKey: "showLocalPlayer") }
@@ -244,6 +246,23 @@ final class AppModel {
         let y = Int32((min(max(unit.y, 0), 0.9999) * canvasSize.height).rounded(.down))
         clickSeq &+= 1
         client.send(RSProtocol.encodeUIClick(seq: clickSeq, button: button, x: x, y: y))
+    }
+
+    /// Fixed-mode canvas rect scaled to the current canvas, in image pixels.
+    func canvasRect(_ r: CGRect) -> CGRect {
+        guard let img = interfaceImage else { return r }
+        let sx = CGFloat(img.width) / GameTab.fixed.width, sy = CGFloat(img.height) / GameTab.fixed.height
+        return CGRect(x: r.minX * sx, y: r.minY * sy, width: r.width * sx, height: r.height * sy)
+    }
+
+    /// One click on a side tab stone.
+    func openTab(_ tab: GameTab) {
+        selectedTab = tab
+        let p = tab.stone
+        let saved = rightClickNext
+        rightClickNext = false
+        clickInterface(unit: CGPoint(x: p.x / GameTab.fixed.width, y: p.y / GameTab.fixed.height))
+        rightClickNext = saved
     }
 
     func connectManual() {

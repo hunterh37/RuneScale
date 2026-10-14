@@ -17,7 +17,8 @@ final class HandInput {
     func stop() { session.stop() }
 
     func run(model: AppModel, scene: @escaping () -> WorldScene?, head: @escaping () -> simd_float4x4?,
-             sword: @escaping () -> Entity?, backpack: @escaping () -> Entity?, rig: EquipmentRig) async {
+             sword: @escaping () -> Entity?, backpack: @escaping () -> Entity?, handMenu: @escaping () -> Entity? = { nil },
+             rig: EquipmentRig) async {
         guard HandTrackingProvider.isSupported else {
             model.lastGesture = "Hand tracking not supported; tap to click"
             return
@@ -39,6 +40,14 @@ final class HandInput {
             if swordSide { sword()?.isEnabled = anchor.isTracked && !rig.hasWeapon && rig.showWeapon }
             rig.updateHand(anchor, swordSide: swordSide)
             if let h = head() { rig.updateBody(head: h) }
+            if !swordSide, let menu = handMenu() {
+                if anchor.isTracked, let h = head(), let palm = HandMenuPlacement.palmFacesHead(anchor, head: h) {
+                    HandMenuPlacement.place(menu, palm: palm.pos, normal: palm.normal, head: h)
+                    menu.isEnabled = true
+                } else {
+                    menu.isEnabled = false
+                }
+            }
 
             guard anchor.isTracked, let s = Self.sample(anchor) else {
                 _ = isRight ? right.lost() : left.lost()
