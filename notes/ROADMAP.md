@@ -111,12 +111,44 @@ pathing, hit roll). No gesture sends repeated or timed clicks.
 Dependencies: M2 menu stream (top option check, menu rows), M3 widget stream (item ids, slots,
 WIDGET_CLICK), equipped item model export (M5 textures).
 
+## M3.6 Input schemes (notes/INPUT_UX.md)
+
+- [ ] `Input scheme` setting: Look+pinch (A), Hand direct (B), PS VR2 Sense (C); shared IntentMapper
+- [ ] Ring menu: up to 8 MENU rows around the target, Cancel center, flick/gaze/stick pick,
+      list fallback over 8 entries, game color tags
+- [ ] INPUT_ACK carries top menu option text; action label flashes at the tap point
+- [ ] Pinch-hold right click with configurable 250-600 ms threshold
+- [ ] Two-hand zoom-to-pick on tabletop (headset only)
+- [ ] PS VR2 Sense: GameController + AccessoryTrackingProvider ray, trigger/grip/stick map, rumble on ACK
+- [ ] Gamepad: tile cursor, D-pad panel focus
+- [ ] Bow draw and staff point resolve to Attack click
+- [ ] Prayer wrist ring, orbs wrist watch, minimap waist disc (click minimap pixel)
+- [ ] Dialog options floating over the NPC, 1-5 key send
+- [ ] Withdraw-X numeric pad, system keyboard field to KEY events
+- [ ] Comfort: seated, one-hand, tap-only, left-handed, slide vignette
+- [ ] Rules review of 2-click gestures (Use-drag, spell-point, throw-drop); split option
+
 ## M4 Dialogs, bank, chat, keyboard
 
 - [ ] NPC dialog / options (widget groups 231, 217, 219) as headset panels, tap or number key
 - [ ] Bank, shop, GE: scrollable item grids, withdraw-X numeric entry
 - [ ] Chat: visionOS keyboard text field sends key events; public/clan/private tabs read-only first
 - [ ] Hotkeys row: F-keys, space, escape, number keys
+
+## M4.5 Full game coverage
+
+- [ ] Skilling loops: fishing, woodcutting, mining (click spot), cooking/smithing make-X dialog
+      (widget 270), fletching/crafting item-on-item, firemaking, agility obstacles, thieving
+- [ ] Shift-drop with left trigger/modifier hold
+- [ ] Combat: special attack orb, auto-retaliate, combat style tab, prayers, quick-prayers
+- [ ] Questing: dialog, item-on-NPC, cutscene camera follow, quest journal panel
+- [ ] Banking: tabs, placeholders, deposit-all, noted toggle, search via keyboard
+- [ ] Grand Exchange: offer slots, item search, price entry
+- [ ] Trading and duels: trade screen widgets 335/334, confirm
+- [ ] Teleports: spellbook, jewelry rub menus, fairy rings, spirit trees (widget menus)
+- [ ] Login, world switcher, logout tab, settings tab
+- [ ] Death, gravestone, instances (Kourend/raids load plane changes)
+- [ ] Clue scrolls: text reading on panel, emote tab, coordinates
 
 ## M5 Play feel
 
@@ -126,6 +158,7 @@ WIDGET_CLICK), equipped item model export (M5 textures).
 - [ ] Indoor plane culling and bridges
 - [ ] Spatial audio from game sound effects (plugin forwards sound ids)
 - [ ] Game camera follows headset yaw option
+- [ ] PvM latency target 150 ms worst case; tick metronome option for prayer flicking
 
 ## M6 Distribution
 
