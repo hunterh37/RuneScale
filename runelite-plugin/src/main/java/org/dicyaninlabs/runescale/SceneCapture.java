@@ -38,6 +38,8 @@ class SceneCapture
 	private final Client client;
 	private final TextureColors textures;
 	private final Set<Long> sentMeshes = new HashSet<>();
+	/** Terrain tiles already streamed since the last reset, keyed by plane, x, y (bridge bit 0x8 in plane). */
+	private final Set<Integer> sentTiles = new HashSet<>();
 	private final Map<Long, Protocol.Instance> statics = new HashMap<>();
 	private final Map<Model, Long> idCache = new IdentityHashMap<>();
 	private int baseX = Integer.MIN_VALUE, baseY = Integer.MIN_VALUE, plane = -1;
@@ -76,6 +78,7 @@ class SceneCapture
 			baseY = wv.getBaseY();
 			plane = curPlane;
 			sentMeshes.clear();
+			sentTiles.clear();
 			statics.clear();
 			idCache.clear();
 			Protocol.Reset r = new Protocol.Reset();
@@ -101,14 +104,22 @@ class SceneCapture
 				{
 					Tile t = tiles[z][x][y];
 					if (t == null) continue;
-					if (reset) addTerrain(t, z, x, y, heights, terrain, seen, out);
+					// terrain is sent once per tile; walking streams the tiles that enter the radius
+					if (sentTiles.add(z << 16 | x << 8 | y)) addTerrain(t, z, z, x, y, heights, terrain, seen, out);
 					addObjects(t, seen, out);
+					// bridge-flagged tiles (Grand Exchange floor, bridges) keep the ground level here
+					Tile bridge = t.getBridge();
+					if (bridge != null)
+					{
+						int hz = Math.max(0, Math.min(heights.length - 1, bridge.getRenderLevel()));
+						if (sentTiles.add((z | 8) << 16 | x << 8 | y)) addTerrain(bridge, hz, z | 8, x, y, heights, terrain, seen, out);
+						addObjects(bridge, seen, out);
+					}
 				}
 			}
 		}
-		if (!reset)
 		{
-			// terrain only re-sent on reset; keep previous terrain instances alive
+			// terrain is sent once per tile; keep previous terrain instances alive
 			for (Map.Entry<Long, Protocol.Instance> e : statics.entrySet())
 			{
 				if (e.getKey() < 0) seen.putIfAbsent(e.getKey(), e.getValue());
@@ -141,7 +152,8 @@ class SceneCapture
 		if (idCache.size() > 50000) idCache.clear();
 	}
 
-	private void addTerrain(Tile t, int z, int x, int y, int[][][] h, List<Protocol.Tile> terrain,
+	/** {@code z} indexes heights; {@code idPlane} is the plane in ids and messages (bit 8 = bridge). */
+	private void addTerrain(Tile t, int z, int idPlane, int x, int y, int[][][] h, List<Protocol.Tile> terrain,
 		Map<Long, Protocol.Instance> seen, Consumer<byte[]> out)
 	{
 		SceneTilePaint paint = t.getSceneTilePaint();
@@ -150,7 +162,7 @@ class SceneCapture
 			Protocol.Tile pt = new Protocol.Tile();
 			pt.x = x;
 			pt.y = y;
-			pt.plane = z;
+			pt.plane = idPlane & 3;
 			pt.heights[0] = h[z][x][y];
 			pt.heights[1] = h[z][x + 1][y];
 			pt.heights[2] = h[z][x + 1][y + 1];
@@ -170,7 +182,7 @@ class SceneCapture
 			{
 				sendMesh(m, out);
 				Protocol.Instance in = new Protocol.Instance();
-				in.id = -1L - ((long) z << 16 | (long) x << 8 | y); // negative ids = terrain
+				in.id = -1L - ((long) idPlane << 16 | (long) x << 8 | y); // negative ids = terrain
 				in.meshId = m.id;
 				seen.put(in.id, in);
 			}

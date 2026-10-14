@@ -34,6 +34,10 @@ final class AppModel {
             scenes.forEach { $0.applyRenderDistance() }
         }
     }
+    /// Room-scale only: full immersion with a black sky sphere instead of passthrough. Saved across launches.
+    var blackSkybox: Bool = UserDefaults.standard.bool(forKey: "blackSkybox") {
+        didSet { UserDefaults.standard.set(blackSkybox, forKey: "blackSkybox") }
+    }
     var immersiveOpen = false
     var inputEnabled: Bool = UserDefaults.standard.object(forKey: "inputEnabled") as? Bool ?? true {
         didSet { UserDefaults.standard.set(inputEnabled, forKey: "inputEnabled") }
@@ -61,6 +65,9 @@ final class AppModel {
     var handGestures: Bool = UserDefaults.standard.object(forKey: "handGestures") as? Bool ?? true {
         didSet { UserDefaults.standard.set(handGestures, forKey: "handGestures") }
     }
+    var showWeapon: Bool = UserDefaults.standard.object(forKey: "showWeapon") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(showWeapon, forKey: "showWeapon"); rig.showWeapon = showWeapon }
+    }
     var swordHand: String = UserDefaults.standard.string(forKey: "swordHand") ?? "right" {
         didSet { UserDefaults.standard.set(swordHand, forKey: "swordHand") }
     }
@@ -71,6 +78,7 @@ final class AppModel {
     private var scenes: [WorldScene] = []
 
     init() {
+        rig.showWeapon = showWeapon
         client.onMessage = { [weak self] msg in self?.handle(msg) }
         browser.start()
         loadLaunchReplay()
@@ -123,6 +131,7 @@ final class AppModel {
         switch src {
         case "mock": msgs = MockWorld.messages(legacy: true)
         case "mock-clean": msgs = MockWorld.messages(legacy: false)
+        case "palette": msgs = MockWorld.paletteTest()
         default:
             let path = (src as NSString).expandingTildeInPath
             guard let data = FileManager.default.contents(atPath: path),

@@ -70,7 +70,7 @@ class ItemSync
 			Protocol.EquipModel e = new Protocol.EquipModel();
 			e.slot = slot;
 			e.itemId = worn.ids[slot];
-			Protocol.Mesh m = e.itemId >= 0 ? model(e.itemId) : null;
+			Protocol.Mesh m = e.itemId >= 0 ? model(e.itemId, iconPosed(slot)) : null;
 			if (m != null)
 			{
 				boolean fresh;
@@ -82,7 +82,13 @@ class ItemSync
 		}
 	}
 
-	private Protocol.Mesh model(int itemId)
+	/** Body-worn slots (head, cape, amulet, body, legs, boots) use the icon pose: upright, front toward -z. */
+	static boolean iconPosed(int slot)
+	{
+		return slot == 0 || slot == 1 || slot == 2 || slot == 4 || slot == 7 || slot == 10;
+	}
+
+	private Protocol.Mesh model(int itemId, boolean posed)
 	{
 		if (modelCache.containsKey(itemId)) return modelCache.get(itemId);
 		Protocol.Mesh mesh = null;
@@ -90,7 +96,16 @@ class ItemSync
 		{
 			ItemComposition def = client.getItemDefinition(itemId);
 			Model model = client.loadModel(def.getInventoryModel(), def.getColorToReplace(), def.getColorToReplaceWith());
-			if (model != null) mesh = SceneCapture.modelMesh(model, 0);
+			if (model != null && posed)
+			{
+				int vc = model.getVerticesCount();
+				float[] vx = model.getVerticesX().clone(), vy = model.getVerticesY().clone(), vz = model.getVerticesZ().clone();
+				iconPose(vx, vy, vz, vc, def.getXan2d(), def.getYan2d(), def.getZan2d());
+				mesh = SceneCapture.build(vc, model.getFaceCount(), vx, vy, vz, model.getFaceIndices1(), model.getFaceIndices2(),
+					model.getFaceIndices3(), model.getFaceColors1(), model.getFaceColors2(), model.getFaceColors3(),
+					model.getFaceTransparencies(), 0);
+			}
+			else if (model != null) mesh = SceneCapture.modelMesh(model, 0);
 		}
 		catch (Exception ex)
 		{
@@ -98,6 +113,27 @@ class ItemSync
 		}
 		modelCache.put(itemId, mesh);
 		return mesh;
+	}
+
+	/**
+	 * Rotates inventory-model vertices the way the client renders the item icon: yaw (yan2d about Y),
+	 * roll (zan2d about Z), pitch (xan2d about X), angles in 2048ths of a turn. The icon camera looks
+	 * along +z with y down, so the result is upright with the item front facing -z.
+	 */
+	static void iconPose(float[] vx, float[] vy, float[] vz, int vc, int xan, int yan, int zan)
+	{
+		double k = 2 * Math.PI / 2048;
+		float sy = (float) Math.sin(yan * k), cy = (float) Math.cos(yan * k);
+		float sz = (float) Math.sin(zan * k), cz = (float) Math.cos(zan * k);
+		float sx = (float) Math.sin(xan * k), cx = (float) Math.cos(xan * k);
+		for (int v = 0; v < vc; v++)
+		{
+			float x = vx[v], y = vy[v], z = vz[v], t;
+			if (yan != 0) { t = z * sy + x * cy; z = z * cy - x * sy; x = t; }
+			if (zan != 0) { t = y * sz + x * cz; y = y * cz - x * sz; x = t; }
+			if (xan != 0) { t = y * cx - z * sx; z = y * sx + z * cx; y = t; }
+			vx[v] = x; vy[v] = y; vz[v] = z;
+		}
 	}
 
 	static Protocol.Container snapshot(int kind, int size, Item[] src)

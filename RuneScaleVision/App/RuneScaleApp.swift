@@ -8,6 +8,9 @@ struct RuneScaleApp: App {
         WindowGroup(id: "connect") {
             ConnectionView()
                 .environment(model)
+                #if DEBUG
+                .director(DemoRoutes.register(model))
+                #endif
         }
         .defaultSize(width: 560, height: 720)
 
@@ -29,7 +32,10 @@ struct RuneScaleApp: App {
             ImmersiveView()
                 .environment(model)
         }
-        .immersionStyle(selection: .constant(.mixed), in: .mixed, .full)
+        .immersionStyle(selection: Binding<ImmersionStyle>(
+            get: { model.blackSkybox ? .full : .mixed },
+            set: { _ in }
+        ), in: .mixed, .full)
         .immersiveEnvironmentBehavior(.coexist)
     }
 }

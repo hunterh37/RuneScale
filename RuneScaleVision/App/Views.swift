@@ -42,6 +42,7 @@ struct ConnectionView: View {
                 Section("Hands") {
                     Toggle("Hand gestures (swing, backpack)", isOn: $model.handGestures)
                     Toggle("Show own player model", isOn: $model.showLocalPlayer)
+                    Toggle("Show sword in hand", isOn: $model.showWeapon)
                     Picker("Sword hand", selection: $model.swordHand) {
                         Text("Right").tag("right")
                         Text("Left").tag("left")
@@ -88,6 +89,7 @@ struct ConnectionView: View {
                             }
                         }
                     }
+                    Toggle("Black skybox (room-scale)", isOn: $model.blackSkybox)
                     Button("Open tabletop") { openWindow(id: "tabletop") }
                     Button("Open interface window") { openWindow(id: "interface") }
                 }
@@ -136,6 +138,7 @@ struct ImmersiveView: View {
     @State private var hands = HandInput()
     @State private var backpack: Entity?
     @State private var sword: Entity?
+    @State private var skybox: Entity?
 
     var body: some View {
         RealityView { content, attachments in
@@ -144,6 +147,11 @@ struct ImmersiveView: View {
             scene = s
             model.register(s)
             content.add(model.rig.root)
+            let sky = ModelEntity(mesh: .generateSphere(radius: 900), materials: [UnlitMaterial(color: .black)])
+            sky.scale = [-1, 1, 1] // render the inside faces
+            sky.isEnabled = model.blackSkybox
+            content.add(sky)
+            skybox = sky
             let blade = SwordModel.make()
             blade.isEnabled = false
             content.add(blade)
@@ -165,6 +173,7 @@ struct ImmersiveView: View {
             await hands.run(model: model, scene: { scene }, head: { head.pose() }, sword: { sword }, backpack: { backpack }, rig: model.rig)
         }
         .task { await head.start() }
+        .onChange(of: model.blackSkybox) { _, on in skybox?.isEnabled = on }
         .onAppear { if model.showInterface { openWindow(id: "interface") } }
         .onDisappear {
             if let scene { model.unregister(scene) }
@@ -205,7 +214,8 @@ private struct TapToClick: ViewModifier {
                 .targetedToAnyEntity()
                 .onEnded { value in
                     guard let scene, Self.isInWorld(value.entity, scene.world) else { return }
-                    let p = value.convert(value.location3D, from: .local, to: scene.world)
+                    let hit = value.convert(value.location3D, from: .local, to: scene.world)
+                    let p = scene.clickPoint(for: value.entity, hit: hit)
                     model.click(Coordinates.units(p, metersPerUnit: 1 / Coordinates.unitsPerTile), button: .left)
                 }
         )

@@ -3,6 +3,9 @@ options:
   bundleIdPrefix: org.oldschool.runescape
   deploymentTarget:
     visionOS: "26.0"
+packages:
+  DicyaninStageDirector:
+    path: ../../DicyaninStageDirector
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -23,6 +26,7 @@ targets:
     sources: [App]
     dependencies:
       - target: RuneScaleCore
+      - package: DicyaninStageDirector
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.oldschool.runescape.runescale

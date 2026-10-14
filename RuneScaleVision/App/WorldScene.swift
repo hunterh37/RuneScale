@@ -30,7 +30,7 @@ final class WorldScene {
     private var cullCenters: [ObjectIdentifier: SIMD2<Float>] = [:]
     private var playerXZ = SIMD2<Float>.zero
     private var lastCullTile = SIMD2<Int32>(.max, .max)
-    private static let maxTransient = 800
+    private static let maxTransient = 4000
 
     private lazy var material: RealityKit.Material = Self.makeMaterial()
 
@@ -96,8 +96,14 @@ final class WorldScene {
         if m.transient {
             transientOrder.append(m.id)
             if transientOrder.count > Self.maxTransient {
-                let drop = transientOrder.removeFirst()
-                meshes.removeValue(forKey: drop)
+                // evict oldest mesh not shown by an actor; in-use meshes go to the back
+                let inUse = Set(actorState.values.map(\.meshId))
+                for _ in 0..<transientOrder.count {
+                    let drop = transientOrder.removeFirst()
+                    if inUse.contains(drop) { transientOrder.append(drop); continue }
+                    meshes.removeValue(forKey: drop)
+                    break
+                }
             }
         }
     }
@@ -137,8 +143,14 @@ final class WorldScene {
         var seen = Set<UInt32>()
         actorState = Dictionary(f.actors.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         for a in f.actors {
-            guard let res = meshes[a.meshId] else { continue }
-            seen.insert(a.key)
+            seen.insert(a.key) // keep an actor whose new mesh has not arrived yet
+            guard let res = meshes[a.meshId] else {
+                if let e = actors[a.key] {
+                    let pos = Coordinates.point(x: Float(a.x), y: Float(a.y), z: Float(a.z), metersPerUnit: s)
+                    e.move(to: Transform(rotation: simd_quatf(angle: Coordinates.yaw(orientation: a.orientation), axis: [0, 1, 0]), translation: pos), relativeTo: world, duration: 0.08, timingFunction: .linear)
+                }
+                continue
+            }
             let pos = Coordinates.point(x: Float(a.x), y: Float(a.y), z: Float(a.z), metersPerUnit: s)
             let t = Transform(rotation: simd_quatf(angle: Coordinates.yaw(orientation: a.orientation), axis: [0, 1, 0]), translation: pos)
             let visible = a.kind != .local || UserDefaults.standard.object(forKey: "showLocalPlayer") as? Bool ?? false
@@ -210,6 +222,46 @@ final class WorldScene {
         return (a.x, a.y - 90, a.z) // height is positive downward
     }
 
+    private var clickMarker: Entity?
+
+    /// World-space point to click for a tap. Terrain uses the exact hit; box-collider entities
+    /// (actors, objects) use their mesh center, since a point on the box surface floats off the
+    /// ground and projects onto a different tile in the game camera. Shows a 3D marker.
+    func clickPoint(for e: Entity, hit: SIMD3<Float>) -> SIMD3<Float> {
+        let isTerrain = terrain.contains { $0 === e }
+        var p = hit
+        var ground = hit
+        if !isTerrain, let m = (e as? ModelEntity)?.model?.mesh {
+            p = e.convert(position: m.bounds.center, to: world)
+            ground = e.convert(position: [m.bounds.center.x, m.bounds.min.y, m.bounds.center.z], to: world)
+        }
+        showClickMarker(at: ground, red: !isTerrain)
+        return p
+    }
+
+    private func showClickMarker(at p: SIMD3<Float>, red: Bool) {
+        clickMarker?.removeFromParent()
+        let s = Self.metersPerUnit * Coordinates.unitsPerTile // 1 tile in world units
+        var mat = UnlitMaterial(color: red ? .red : .yellow)
+        mat.blending = .opaque
+        let bar = MeshResource.generateBox(width: s * 0.7, height: s * 0.04, depth: s * 0.1)
+        let m = Entity()
+        for angle in [Float.pi / 4, -Float.pi / 4] {
+            let b = ModelEntity(mesh: bar, materials: [mat])
+            b.orientation = simd_quatf(angle: angle, axis: [0, 1, 0])
+            m.addChild(b)
+        }
+        m.position = p + [0, s * 0.05, 0]
+        world.addChild(m)
+        clickMarker = m
+        Task { @MainActor [weak m, weak self] in
+            try? await Task.sleep(for: .milliseconds(600))
+            guard let m else { return }
+            m.removeFromParent()
+            if self?.clickMarker === m { self?.clickMarker = nil }
+        }
+    }
+
     /// Box collider from mesh bounds: cheap, used for objects and actors.
     private static func makeTappable(_ e: ModelEntity, bounds res: MeshResource) {
         let b = res.bounds
@@ -237,6 +289,15 @@ final class WorldScene {
         return try? MeshResource.generate(from: [d])
     }
 
+    /// Uncompressed, no mips: the palette is a lookup table, and block compression
+    /// (the RealityKit default) mixes neighboring texels into wrong face colors.
+    private static var paletteOptions: TextureResource.CreateOptions {
+        #if DEBUG
+        if UserDefaults.standard.string(forKey: "P.compress") == "1" { return .init(semantic: .color) }
+        #endif
+        return .init(semantic: .color, compression: .none, mipmapsMode: .none)
+    }
+
     private static func makeMaterial() -> RealityKit.Material {
         var mat = UnlitMaterial()
         mat.faceCulling = .none
@@ -247,7 +308,7 @@ final class WorldScene {
            let img = CGImage(width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: n * 4, space: cs,
                              bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: provider,
                              decode: nil, shouldInterpolate: false, intent: .defaultIntent),
-           let tex = try? TextureResource(image: img, options: .init(semantic: .color)) {
+           let tex = try? TextureResource(image: img, options: Self.paletteOptions) {
             let sd = MTLSamplerDescriptor()
             sd.minFilter = .nearest
             sd.magFilter = .nearest

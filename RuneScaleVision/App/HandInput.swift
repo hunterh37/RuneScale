@@ -36,7 +36,7 @@ final class HandInput {
             let isRight = anchor.chirality == .right
             let swordSide = (model.swordHand == "right") == isRight
             // placeholder blade only while no weapon model is worn
-            if swordSide { sword()?.isEnabled = anchor.isTracked && !rig.hasWeapon }
+            if swordSide { sword()?.isEnabled = anchor.isTracked && !rig.hasWeapon && rig.showWeapon }
             rig.updateHand(anchor, swordSide: swordSide)
             if let h = head() { rig.updateBody(head: h) }
 

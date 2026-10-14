@@ -16,6 +16,10 @@ final class EquipmentRig {
     init() { root.name = "EquipmentRig" }
 
     var hasWeapon: Bool { slots[.weapon] != nil }
+    /// Hide the held weapon (UI toggle).
+    var showWeapon = true
+    /// Reverse the detected hilt end; the spread heuristic picks the tip on curved blades.
+    var flipWeapon = true
 
     /// Rebuild one slot from the scene mesh cache.
     func set(slot raw: UInt8, meshId: Int64, scene: WorldScene) {
@@ -30,11 +34,16 @@ final class EquipmentRig {
         let s = BodyLayout.scale(extents: b.extents, slot: slot)
         model.scale = .init(repeating: s)
         model.position = -b.center * s
+        // body items arrive in icon pose (upright, front toward +z here); turn the front to -z (forward)
+        if slot.anchor == .body {
+            model.orientation = simd_quatf(angle: .pi, axis: [0, 1, 0])
+            model.position = -model.orientation.act(b.center * s)
+        }
         // weapons: longest axis along the blade (-z of the holder)
         if slot == .weapon {
             // hand holds the hilt: blade (hilt -> tip) along -z, grip ~9% of length in from the pommel
             let axis = Self.longestAxis(b.extents)
-            let sign = Self.hiltSign(res, center: b.center, axis: axis)
+            let sign = Self.hiltSign(res, center: b.center, axis: axis) * (flipWeapon ? -1 : 1)
             let half = simd_dot(b.extents, axis) / 2
             model.orientation = simd_quatf(from: axis * -sign, to: [0, 0, -1])
             let gripLocal = b.center + axis * sign * half * 0.82
@@ -68,7 +77,7 @@ final class EquipmentRig {
         let p = SIMD3(m.columns.3.x, m.columns.3.y, m.columns.3.z)
         let grip = simd_quatf(m)
         if swordSide, let w = slots[.weapon] {
-            w.isEnabled = a.isTracked
+            w.isEnabled = a.isTracked && showWeapon
             SwordModel.attach(w, to: a)
         }
         if !swordSide, let s = slots[.shield] {

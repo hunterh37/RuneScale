@@ -116,6 +116,23 @@ public enum MockWorld {
         return out
     }
 
+    /// Flat field of pseudo-random tile colors: every adjacent palette texel differs, so any
+    /// block compression of the palette texture shows as off-color tiles.
+    public static func paletteTest() -> [RSProtocol.Message] {
+        var tiles: [RSProtocol.Tile] = []
+        var r: UInt32 = 0x9E3779B9
+        for x in (center - 24)...(center + 24) {
+            for y in (center - 24)...(center + 24) {
+                r ^= r << 13; r ^= r >> 17; r ^= r << 5
+                let c = r & 0xFFFFFF
+                tiles.append(.init(x: x, y: y, plane: 0, heights: [0, 0, 0, 0], colors: [c, c, c, c]))
+            }
+        }
+        let px = Int32(center * 128 + 64)
+        return [.hello(radius: 24), .reset(baseX: baseX, baseY: baseY, plane: 0), .terrain(tiles),
+                .frame(.init(tick: 1, playerX: px, playerY: 0, playerZ: px, playerOrientation: 0, cameraYaw: 0, plane: 0, actors: []))]
+    }
+
     /// Gentle hills, height positive downward.
     static func height(_ x: Int, _ y: Int) -> Int32 {
         Int32(-40 * sin(Double(x) * 0.35) - 30 * cos(Double(y) * 0.27))

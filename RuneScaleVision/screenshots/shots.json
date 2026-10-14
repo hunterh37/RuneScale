@@ -1,0 +1,4 @@
+{ "bundleId": "org.oldschool.runescape.runescale", "scheme": "RuneScale", "settleSeconds": 2.0, "timeoutSeconds": 120,
+  "shots": [
+    { "id": "ge-immersive", "route": "world/immersive", "at": 2, "params": { "src": "/Users/hunter/Dev/RuneScale/notes/captures/live2.rsrec" } },
+    { "id": "ge-tabletop", "route": "world/tabletop", "at": 2, "params": { "src": "/Users/hunter/Dev/RuneScale/notes/captures/live2.rsrec" } } ] }
