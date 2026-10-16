@@ -25,6 +25,10 @@ public final class Protocol
 	public static final int EQUIP_MODEL = 12;
 	public static final int WIDGET_CLICK = 66;
 	public static final int MENU = 13;
+	public static final int HITSPLAT = 14;
+	public static final int HEALTH = 15;
+	public static final int SOUND = 16;
+	public static final int MUSIC = 17;
 	public static final int MENU_SELECT = 67;
 	public static final int ACK_NO_MENU = 6;
 	public static final int CONTAINER_INVENTORY = 0, CONTAINER_EQUIPMENT = 1;
@@ -37,7 +41,7 @@ public final class Protocol
 	public static final int ACK_OK = 0, ACK_DISABLED = 1, ACK_OFFSCREEN = 2, ACK_RATE_LIMITED = 3, ACK_NOT_LOGGED_IN = 4;
 
 	public static final int MESH_FLAG_TRANSIENT = 1;
-	public static final int KIND_LOCAL = 0, KIND_PLAYER = 1, KIND_NPC = 2;
+	public static final int KIND_LOCAL = 0, KIND_PLAYER = 1, KIND_NPC = 2, KIND_OWN_PET = 3, KIND_PET = 4;
 
 	private Protocol() { }
 
@@ -76,6 +80,18 @@ public final class Protocol
 	{
 		public int tick, playerX, playerY, playerZ, playerOrientation, cameraYaw, plane;
 		public List<Actor> actors = new ArrayList<>();
+	}
+
+	/** One hitsplat on an actor (same key as FRAME), with the actor's health bar at that moment. */
+	public static final class Hitsplat
+	{
+		public int key, type, amount, ratio = -1, scale;
+	}
+
+	/** Health bar for one actor; ratio/scale as in Actor.getHealthRatio/getHealthScale. */
+	public static final class Health
+	{
+		public int key, ratio, scale;
 	}
 
 	public static final class Reset
@@ -304,6 +320,37 @@ public final class Protocol
 		return b.array();
 	}
 
+	public static byte[] hitsplat(Hitsplat h)
+	{
+		return header(HITSPLAT, 4 + 2 + 4 + 1 + 1).putInt(h.key).putShort((short) h.type).putInt(h.amount)
+			.put((byte) (h.ratio < 0 ? 255 : Math.min(h.ratio, 254))).put((byte) Math.min(h.scale, 255)).array();
+	}
+
+	/** Actors whose health bar is showing this tick; actors left out have no bar. */
+	public static byte[] health(List<Health> list)
+	{
+		ByteBuffer b = header(HEALTH, 4 + list.size() * 6);
+		b.putInt(list.size());
+		for (Health h : list) b.putInt(h.key).put((byte) Math.min(h.ratio, 254)).put((byte) Math.min(h.scale, 255));
+		return b.array();
+	}
+
+	/** Sound effect: area = positioned at scene-local x,z units (tile * 128 + 64); sourceKey -1 none. */
+	public static byte[] sound(boolean area, int soundId, int delay, int range, int x, int z, int sourceKey)
+	{
+		return header(SOUND, 1 + 2 + 2 + 1 + 4 + 4 + 4).put((byte) (area ? 1 : 0)).putShort((short) soundId)
+			.putShort((short) Math.min(Math.max(delay, 0), 0xFFFF)).put((byte) Math.min(Math.max(range, 0), 255))
+			.putInt(x).putInt(z).putInt(sourceKey).array();
+	}
+
+	/** Music tab now-playing title; empty = none. */
+	public static byte[] music(String title)
+	{
+		byte[] u = title.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+		int n = Math.min(u.length, 0xFFFF);
+		return header(MUSIC, 2 + n).putShort((short) n).put(u, 0, n).array();
+	}
+
 	public static byte[] menuSelect(MenuSelect s)
 	{
 		return header(MENU_SELECT, 9).putInt(s.seq).putInt(s.menuSeq).put((byte) s.index).array();
@@ -330,6 +377,8 @@ public final class Protocol
 		public EquipModel equip;
 		public Menu menu;
 		public MenuSelect menuSelect;
+		public Hitsplat hitsplat;
+		public List<Health> health;
 	}
 
 	public static Decoded decode(byte[] data)
@@ -534,6 +583,32 @@ public final class Protocol
 					m.targets[i] = str(b);
 				}
 				d.menu = m;
+				break;
+			}
+			case HITSPLAT:
+			{
+				Hitsplat h = new Hitsplat();
+				h.key = b.getInt();
+				h.type = b.getShort() & 0xFFFF;
+				h.amount = b.getInt();
+				int r = b.get() & 0xFF;
+				h.ratio = r == 255 ? -1 : r;
+				h.scale = b.get() & 0xFF;
+				d.hitsplat = h;
+				break;
+			}
+			case HEALTH:
+			{
+				int n = b.getInt();
+				d.health = new ArrayList<>(n);
+				for (int i = 0; i < n; i++)
+				{
+					Health h = new Health();
+					h.key = b.getInt();
+					h.ratio = b.get() & 0xFF;
+					h.scale = b.get() & 0xFF;
+					d.health.add(h);
+				}
 				break;
 			}
 			case MENU_SELECT:

@@ -27,7 +27,10 @@ public enum RSProtocol {
         public var orientation: UInt16
     }
 
-    public enum ActorKind: UInt8, Sendable { case local = 0, player = 1, npc = 2 }
+    public enum ActorKind: UInt8, Sendable { case local = 0, player = 1, npc = 2, ownPet = 3, pet = 4
+        /// Follower NPCs (pets). Older plugins send them as `.npc`.
+        public var isPet: Bool { self == .ownPet || self == .pet }
+    }
 
     public struct Actor: Sendable, Equatable {
         public var key: UInt32
@@ -60,6 +63,43 @@ public enum RSProtocol {
         case equipModel(slot: UInt8, itemId: Int32, meshId: Int64)
         /// Open game right-click menu, rows top to bottom; empty rows = closed.
         case menu(Menu)
+        /// Game hitsplat on an actor (FRAME key); health is the bar at that moment, nil when none.
+        case hitsplat(Hitsplat)
+        /// Health bars the game draws this tick; actors left out have no bar.
+        case health([Health])
+        /// Game sound effect. Area sounds carry a scene-local position; local/UI sounds do not.
+        case sound(Sound)
+        /// Music tab "now playing" title; empty = nothing playing.
+        case music(title: String)
+    }
+
+    public struct Sound: Sendable, Equatable {
+        /// false local (own player / interface), true area (positioned in the scene).
+        public var area: Bool
+        public var soundId: UInt16
+        public var delay: UInt16
+        public var range: UInt8
+        public var x: Int32, z: Int32
+        /// FRAME actor key of the source, 0xFFFFFFFF none.
+        public var sourceKey: UInt32
+        public init(area: Bool, soundId: UInt16, delay: UInt16, range: UInt8, x: Int32, z: Int32, sourceKey: UInt32) {
+            self.area = area; self.soundId = soundId; self.delay = delay; self.range = range
+            self.x = x; self.z = z; self.sourceKey = sourceKey
+        }
+    }
+
+    public struct Health: Sendable, Equatable {
+        public var key: UInt32, ratio: UInt8, scale: UInt8
+        public init(key: UInt32, ratio: UInt8, scale: UInt8) { self.key = key; self.ratio = ratio; self.scale = scale }
+        public var fraction: Float { scale == 0 ? 0 : min(1, Float(ratio) / Float(scale)) }
+    }
+
+    public struct Hitsplat: Sendable, Equatable {
+        public var key: UInt32, type: UInt16, amount: Int32
+        public var health: Health?
+        public init(key: UInt32, type: UInt16, amount: Int32, health: Health?) {
+            self.key = key; self.type = type; self.amount = amount; self.health = health
+        }
     }
 
     public struct MenuRow: Sendable, Equatable {
@@ -233,6 +273,22 @@ public enum RSProtocol {
             func str() throws -> String { String(decoding: try r.bytes(Int(try r.u16())), as: UTF8.self) }
             for _ in 0..<n { rows.append(MenuRow(option: try str(), target: try str())) }
             return .menu(Menu(seq: seq, rows: rows))
+        case 16:
+            let area = try r.u8() == 1
+            let id = try r.u16(), delay = try r.u16(), range = try r.u8()
+            return .sound(Sound(area: area, soundId: id, delay: delay, range: range, x: try r.i32(), z: try r.i32(), sourceKey: try r.u32()))
+        case 17:
+            return .music(title: String(decoding: try r.bytes(Int(try r.u16())), as: UTF8.self))
+        case 14:
+            let key = try r.u32(), t = try r.u16(), amount = try r.i32()
+            let ratio = try r.u8(), scale = try r.u8()
+            return .hitsplat(Hitsplat(key: key, type: t, amount: amount,
+                                      health: ratio == 255 ? nil : Health(key: key, ratio: ratio, scale: scale)))
+        case 15:
+            let n = Int(try r.u32())
+            var list = [Health]()
+            for _ in 0..<n { list.append(Health(key: try r.u32(), ratio: try r.u8(), scale: try r.u8())) }
+            return .health(list)
         default:
             throw DecodeError.unknownType(type)
         }

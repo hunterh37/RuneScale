@@ -156,7 +156,7 @@ WIDGET_CLICK), equipped item model export (M5 textures).
 - [ ] Hit marks, overhead text, HP bars, projectiles as headset overlays (only what the game draws)
 - [ ] Actor animation via pose mesh caching (bandwidth), textures, roofs, transparency
 - [ ] Indoor plane culling and bridges
-- [ ] Spatial audio from game sound effects (plugin forwards sound ids)
+- [x] Spatial audio from game sound effects (plugin forwards sound ids); music title; Audio settings
 - [ ] Game camera follows headset yaw option
 - [ ] PvM latency target 150 ms worst case; tick metronome option for prayer flicking
 

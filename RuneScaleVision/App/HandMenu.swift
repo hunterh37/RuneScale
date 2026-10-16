@@ -49,7 +49,18 @@ struct HandMenuView: View {
                     .accessibilityLabel(tab.title)
                 }
             }
-            Text(model.selectedTab?.title ?? "Tabs").font(.caption.bold())
+            HStack {
+                Text(model.selectedTab?.title ?? "Tabs").font(.caption.bold())
+                Spacer()
+                if model.selectedTab == .music, !model.nowPlaying.isEmpty {
+                    Text(model.nowPlaying).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Button { @Bindable var m = model; m.audioEnabled.toggle() } label: {
+                    Image(systemName: model.audioEnabled ? "speaker.wave.2.fill" : "speaker.slash.fill")
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(model.audioEnabled ? "Mute" : "Unmute")
+            }
             panel
         }
         .padding(12)

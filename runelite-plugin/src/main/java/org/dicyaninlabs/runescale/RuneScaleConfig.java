@@ -46,6 +46,14 @@ public interface RuneScaleConfig extends Config
 		description = "Write the scene stream to .runelite/runescale/capture-*.rsrec for headset replay (-replay <path>)", position = 9)
 	default boolean recordStream() { return false; }
 
+	@ConfigItem(keyName = "streamAudio", name = "Stream audio",
+		description = "Send sound effect ids and the music track title to the headset for spatial playback", position = 10)
+	default boolean streamAudio() { return true; }
+
+	@ConfigItem(keyName = "muteClientAudio", name = "Mute client sound effects",
+		description = "While a headset is connected, sound effects play only on the headset", position = 11)
+	default boolean muteClientAudio() { return false; }
+
 	@ConfigItem(keyName = "token", name = "", description = "", hidden = true)
 	default String token() { return ""; }
 }

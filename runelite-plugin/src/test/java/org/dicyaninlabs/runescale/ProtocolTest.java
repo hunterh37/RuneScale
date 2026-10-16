@@ -196,4 +196,23 @@ public class ProtocolTest
 		assertEquals(2, ds.menuSelect.index);
 		assertEquals(new java.awt.Point(150, 241), RemoteInput.menuRow(100, 200, 100, 1));
 	}
+
+	@org.junit.Test
+	public void hitsplatAndHealthRoundTrip()
+	{
+		Protocol.Hitsplat h = new Protocol.Hitsplat();
+		h.key = 0x10005; h.type = 17; h.amount = 12; h.ratio = 20; h.scale = 30;
+		Protocol.Hitsplat g = Protocol.decode(Protocol.hitsplat(h)).hitsplat;
+		org.junit.Assert.assertEquals(0x10005, g.key);
+		org.junit.Assert.assertEquals(17, g.type);
+		org.junit.Assert.assertEquals(12, g.amount);
+		org.junit.Assert.assertEquals(20, g.ratio);
+		org.junit.Assert.assertEquals(30, g.scale);
+		Protocol.Health a = new Protocol.Health();
+		a.key = 7; a.ratio = 3; a.scale = 30;
+		java.util.List<Protocol.Health> l = Protocol.decode(Protocol.health(java.util.List.of(a))).health;
+		org.junit.Assert.assertEquals(1, l.size());
+		org.junit.Assert.assertEquals(7, l.get(0).key);
+		org.junit.Assert.assertEquals(3, l.get(0).ratio);
+	}
 }

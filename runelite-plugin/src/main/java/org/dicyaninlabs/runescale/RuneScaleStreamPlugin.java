@@ -19,6 +19,18 @@ import net.runelite.api.MenuEntry;
 import net.runelite.api.events.ClientTick;
 import net.runelite.api.events.GameStateChanged;
 import net.runelite.api.events.GameTick;
+import net.runelite.api.events.HitsplatApplied;
+import net.runelite.api.events.SoundEffectPlayed;
+import net.runelite.api.events.AreaSoundEffectPlayed;
+import net.runelite.api.widgets.Widget;
+import net.runelite.api.gameval.InterfaceID;
+import net.runelite.client.util.Text;
+import net.runelite.api.Actor;
+import net.runelite.api.NPC;
+import net.runelite.api.Player;
+import net.runelite.api.WorldView;
+import java.util.ArrayList;
+import java.util.List;
 import net.runelite.api.events.ItemContainerChanged;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.callback.ClientThread;
@@ -237,6 +249,7 @@ public class RuneScaleStreamPlugin extends Plugin
 		if (resync)
 		{
 			emit(Protocol.hello(config.radius()));
+			lastMusic = null;
 			items.reset();
 			items.sendAll(this::emit);
 		}
@@ -245,6 +258,85 @@ public class RuneScaleStreamPlugin extends Plugin
 			tickCounter = 0;
 			capture.captureStatic(config.radius(), resync, this::emit);
 		}
+		sendHealth();
+		sendMusic();
+	}
+
+	/** FRAME actor key: player id, local player included, or 0x10000 | npc index. */
+	private static int actorKey(Actor a)
+	{
+		if (a instanceof NPC) return 0x10000 | ((NPC) a).getIndex();
+		if (a instanceof Player) return ((Player) a).getId();
+		return -1;
+	}
+
+	private String lastMusic = null;
+
+	@Subscribe
+	public void onSoundEffectPlayed(SoundEffectPlayed e)
+	{
+		if (capture == null || !active() || !config.streamAudio()) return;
+		int src = e.getSource() == null ? -1 : actorKey(e.getSource());
+		emit(Protocol.sound(false, e.getSoundId(), e.getDelay(), 0, 0, 0, src));
+		if (config.muteClientAudio()) e.consume();
+	}
+
+	@Subscribe
+	public void onAreaSoundEffectPlayed(AreaSoundEffectPlayed e)
+	{
+		if (capture == null || !active() || !config.streamAudio()) return;
+		int src = e.getSource() == null ? -1 : actorKey(e.getSource());
+		emit(Protocol.sound(true, e.getSoundId(), e.getDelay(), e.getRange(),
+			e.getSceneX() * 128 + 64, e.getSceneY() * 128 + 64, src));
+		if (config.muteClientAudio()) e.consume();
+	}
+
+	/** Music tab title, sent when it changes (and once per connection via lastMusic reset). */
+	private void sendMusic()
+	{
+		if (!config.streamAudio()) return;
+		Widget w = client.getWidget(InterfaceID.Music.NOW_PLAYING_TEXT);
+		String t = w == null ? "" : Text.removeTags(w.getText()).trim();
+		if (t.equals(lastMusic)) return;
+		lastMusic = t;
+		emit(Protocol.music(t));
+	}
+
+	@Subscribe
+	public void onHitsplatApplied(HitsplatApplied e)
+	{
+		if (capture == null || !active()) return;
+		int key = actorKey(e.getActor());
+		if (key < 0) return;
+		Protocol.Hitsplat h = new Protocol.Hitsplat();
+		h.key = key;
+		h.type = e.getHitsplat().getHitsplatType();
+		h.amount = e.getHitsplat().getAmount();
+		h.ratio = e.getActor().getHealthRatio();
+		h.scale = e.getActor().getHealthScale();
+		emit(Protocol.hitsplat(h));
+	}
+
+	/** Health bars currently drawn by the game, sent once per tick. */
+	private void sendHealth()
+	{
+		WorldView wv = client.getTopLevelWorldView();
+		if (wv == null) return;
+		List<Protocol.Health> list = new ArrayList<>();
+		List<Actor> all = new ArrayList<>();
+		for (Player p : wv.players()) if (p != null) all.add(p);
+		for (NPC n : wv.npcs()) if (n != null) all.add(n);
+		for (Actor a : all)
+		{
+			int ratio = a.getHealthRatio(), scale = a.getHealthScale();
+			if (ratio < 0 || scale <= 0) continue;
+			Protocol.Health h = new Protocol.Health();
+			h.key = actorKey(a);
+			h.ratio = ratio;
+			h.scale = scale;
+			list.add(h);
+		}
+		emit(Protocol.health(list));
 	}
 
 	@Subscribe

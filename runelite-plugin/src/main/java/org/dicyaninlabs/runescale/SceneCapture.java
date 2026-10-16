@@ -15,6 +15,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.GroundObject;
 import net.runelite.api.Model;
 import net.runelite.api.NPC;
+import net.runelite.api.NPCComposition;
 import net.runelite.api.Perspective;
 import net.runelite.api.Player;
 import net.runelite.api.Renderable;
@@ -78,6 +79,7 @@ class SceneCapture
 			baseY = wv.getBaseY();
 			plane = curPlane;
 			sentMeshes.clear();
+			poses.clear();
 			sentTiles.clear();
 			statics.clear();
 			idCache.clear();

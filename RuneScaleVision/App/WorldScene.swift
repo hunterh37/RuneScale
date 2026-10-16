@@ -1,4 +1,5 @@
 import Foundation
+import QuartzCore
 import Metal
 import RealityKit
 import RuneScaleCore
@@ -13,7 +14,7 @@ final class WorldScene {
     let root = Entity()
     /// Parent of all scene geometry; its local space is scene-local meters (1 tile = 1 m).
     let world = Entity()
-    private let mode: Mode
+    let mode: Mode
     private weak var model: AppModel?
     private static let metersPerUnit: Float = 1 / Coordinates.unitsPerTile
 
@@ -29,10 +30,18 @@ final class WorldScene {
     /// Scene-local XZ center per cullable entity (statics and terrain).
     private var cullCenters: [ObjectIdentifier: SIMD2<Float>] = [:]
     private var playerXZ = SIMD2<Float>.zero
+    /// Local player height in scene units (OSRS, positive down), for area sounds without a source actor.
+    private var playerUnitsY: Float = 0
     private var lastCullTile = SIMD2<Int32>(.max, .max)
     private static let maxTransient = 4000
+    /// Device pose in the immersive space origin; room-scale sets it so the own pet trails the viewer.
+    var headPose: (() -> simd_float4x4?)?
+    private var petFollow: PetFollow.State?
+    private var lastFrameTime: Double?
 
     private lazy var material: RealityKit.Material = Self.makeMaterial()
+    /// Hitsplats and HP bars from HITSPLAT/HEALTH, parented to actor entities.
+    private let overlays = CombatOverlays()
 
     init(mode: Mode, model: AppModel) {
         self.mode = mode
@@ -55,9 +64,10 @@ final class WorldScene {
     func clear() {
         world.children.removeAll()
         meshes.removeAll(); transientOrder.removeAll()
-        statics.removeAll(); terrain.removeAll(); actors.removeAll()
+        statics.removeAll(); terrain.removeAll(); actors.removeAll(); overlays.removeAll()
         cullCenters.removeAll(); cullSlack.removeAll(); lastCullTile = .init(.max, .max)
         hasPlayer = false
+        petFollow = nil; lastFrameTime = nil
     }
 
     func apply(_ msg: RSProtocol.Message) {
@@ -83,7 +93,11 @@ final class WorldScene {
             for id in ids { if let e = statics.removeValue(forKey: id) { untrack(e) } }
         case .frame(let f):
             applyFrame(f)
-        case .inputAck, .uiFrame, .container, .itemIcon, .equipModel, .menu:
+        case .hitsplat(let h):
+            overlays.hitsplat(h, on: actors[h.key])
+        case .health(let list):
+            overlays.health(list, actors: actors)
+        case .inputAck, .uiFrame, .container, .itemIcon, .equipModel, .menu, .sound, .music:
             break
         }
     }
@@ -137,10 +151,17 @@ final class WorldScene {
         }
 
         playerXZ = [player.x, player.z]
+        playerUnitsY = Float(f.playerY)
         let tile = SIMD2<Int32>(Int32(player.x.rounded(.down)), Int32(player.z.rounded(.down)))
         if tile != lastCullTile { lastCullTile = tile; applyRenderDistance() }
 
-        var seen = Set<UInt32>()
+        let now = CACurrentMediaTime()
+        let dt = Float(min(0.25, now - (lastFrameTime ?? now)))
+        lastFrameTime = now
+        if !f.actors.contains(where: { $0.kind == .ownPet }) { petFollow = nil }
+
+        var seen = Set<UInt32>(minimumCapacity: f.actors.count)
+        let showLocal = UserDefaults.standard.object(forKey: "showLocalPlayer") as? Bool ?? false
         actorState = Dictionary(f.actors.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         for a in f.actors {
             seen.insert(a.key) // keep an actor whose new mesh has not arrived yet
@@ -151,11 +172,13 @@ final class WorldScene {
                 }
                 continue
             }
-            let pos = Coordinates.point(x: Float(a.x), y: Float(a.y), z: Float(a.z), metersPerUnit: s)
-            let t = Transform(rotation: simd_quatf(angle: Coordinates.yaw(orientation: a.orientation), axis: [0, 1, 0]), translation: pos)
-            let visible = a.kind != .local || UserDefaults.standard.object(forKey: "showLocalPlayer") as? Bool ?? false
+            var t = Transform(rotation: simd_quatf(angle: Coordinates.yaw(orientation: a.orientation), axis: [0, 1, 0]),
+                              translation: Coordinates.point(x: Float(a.x), y: Float(a.y), z: Float(a.z), metersPerUnit: s))
+            if a.kind == .ownPet, let follow = followTransform(game: t, dt: dt) { t = follow }
+            overlays.place(key: a.key, transform: t, mesh: res, world: world, local: a.kind == .local)
+            let visible = a.kind != .local || showLocal
             if let e = actors[a.key] {
-                e.isEnabled = visible
+                if e.isEnabled != visible { e.isEnabled = visible }
                 if e.model?.mesh !== res { e.model?.mesh = res }
                 e.move(to: t, relativeTo: world, duration: 0.08, timingFunction: .linear)
             } else {
@@ -168,9 +191,35 @@ final class WorldScene {
             }
         }
         for (key, e) in actors where !seen.contains(key) {
+            overlays.forget(key)
             e.removeFromParent()
             actors.removeValue(forKey: key)
         }
+    }
+
+    /// Room-scale own-pet placement near the headset, in `world` space. Nil keeps the game position.
+    private func followTransform(game t: Transform, dt: Float) -> Transform? {
+        guard mode == .roomScale, model?.petFollowsMe ?? true, let m = headPose?() else { petFollow = nil; return nil }
+        let headW = world.convert(position: SIMD3(m.columns.3.x, m.columns.3.y, m.columns.3.z), from: nil)
+        let fwdW = world.convert(direction: -SIMD3(m.columns.2.x, m.columns.2.y, m.columns.2.z), from: nil)
+        let head = SIMD2(headW.x, headW.z)
+        let goal = PetFollow.target(head: head, forward: [fwdW.x, fwdW.z])
+        let cur = petFollow ?? PetFollow.State(position: goal, yaw: 0)
+        let next = PetFollow.step(cur, goal: goal, head: head, dt: dt)
+        petFollow = next
+        return Transform(rotation: simd_quatf(angle: next.yaw, axis: [0, 1, 0]),
+                         translation: [next.position.x, t.translation.y, next.position.y])
+    }
+
+    /// Parent entity and local offset for a game sound: the source actor when known, the scene
+    /// point at player height for area sounds, the viewer origin otherwise.
+    func soundAnchor(_ snd: RSProtocol.Sound) -> (parent: Entity, offset: SIMD3<Float>) {
+        if snd.sourceKey != .max, let e = actors[snd.sourceKey], e.isEnabled || snd.area { return (e, [0, 1.0, 0]) }
+        if snd.area {
+            let p = Coordinates.point(x: Float(snd.x), y: playerUnitsY, z: Float(snd.z), metersPerUnit: Self.metersPerUnit)
+            return (world, p + [0, 1.0, 0])
+        }
+        return (root, [0, 1.2, 0])
     }
 
     private var renderRadius: Float { Float(model?.renderDistance ?? 32) } // 1 tile = 1 scene meter

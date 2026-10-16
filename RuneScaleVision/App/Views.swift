@@ -42,6 +42,7 @@ struct ConnectionView: View {
                 Section("Hands") {
                     Toggle("Hand gestures (swing, backpack)", isOn: $model.handGestures)
                     Toggle("Show own player model", isOn: $model.showLocalPlayer)
+                    Toggle("Pet follows me (room-scale)", isOn: $model.petFollowsMe)
                     Toggle("Show sword in hand", isOn: $model.showWeapon)
                     Picker("Sword hand", selection: $model.swordHand) {
                         Text("Right").tag("right")
@@ -77,6 +78,22 @@ struct ConnectionView: View {
                         Text("Render distance")
                     }
                     Text("\(Int(model.renderDistance)) tiles").foregroundStyle(.secondary)
+                }
+                Section("Audio") {
+                    Toggle("Sound", isOn: $model.audioEnabled)
+                    Group {
+                        Toggle("Music", isOn: $model.musicEnabled)
+                        Slider(value: $model.musicVolume, in: 0...1) { Text("Music volume") }
+                            .disabled(!model.musicEnabled)
+                        Toggle("Sound effects", isOn: $model.effectsEnabled)
+                        Slider(value: $model.effectsVolume, in: 0...1) { Text("Effects volume") }
+                            .disabled(!model.effectsEnabled)
+                        Toggle("Spatial audio", isOn: $model.spatialAudio)
+                        Toggle("Interface sounds", isOn: $model.uiSounds)
+                    }
+                    .disabled(!model.audioEnabled)
+                    Text(model.nowPlaying.isEmpty ? "No track from the plugin" : "Now playing: \(model.nowPlaying)")
+                        .foregroundStyle(.secondary)
                 }
                 Section("View") {
                     Button(model.immersiveOpen ? "Exit room-scale" : "Enter room-scale") {
@@ -146,6 +163,7 @@ struct ImmersiveView: View {
     var body: some View {
         RealityView { content, attachments in
             let s = WorldScene(mode: .roomScale, model: model)
+            s.headPose = { [head] in head.pose() }
             content.add(s.root)
             scene = s
             model.register(s)

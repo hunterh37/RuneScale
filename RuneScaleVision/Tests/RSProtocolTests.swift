@@ -120,4 +120,13 @@ final class RSProtocolTests: XCTestCase {
         XCTAssertEqual(m.rows, [.init(option: "Attack", target: "Goblin"), .init(option: "Cancel", target: "")])
         XCTAssertEqual(Array(RSProtocol.encodeMenuSelect(seq: 1, menuSeq: 4, index: 2)), [0x53, 0x52, 1, 67, 1, 0, 0, 0, 4, 0, 0, 0, 2])
     }
+
+    func testHitsplatAndHealth() throws {
+        var w = W(); w.header(14); w.u32(0x10005); w.u16(17); w.u32(12); w.u8(20); w.u8(30)
+        XCTAssertEqual(try RSProtocol.decode(w.d), .hitsplat(.init(key: 0x10005, type: 17, amount: 12, health: .init(key: 0x10005, ratio: 20, scale: 30))))
+        var n = W(); n.header(14); n.u32(1); n.u16(12); n.u32(0); n.u8(255); n.u8(0)
+        XCTAssertEqual(try RSProtocol.decode(n.d), .hitsplat(.init(key: 1, type: 12, amount: 0, health: nil)))
+        var h = W(); h.header(15); h.u32(1); h.u32(7); h.u8(3); h.u8(30)
+        XCTAssertEqual(try RSProtocol.decode(h.d), .health([.init(key: 7, ratio: 3, scale: 30)]))
+    }
 }

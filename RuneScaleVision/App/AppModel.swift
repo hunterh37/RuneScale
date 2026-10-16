@@ -61,12 +61,18 @@ final class AppModel {
     var inventory = RSProtocol.Container(kind: .inventory, ids: Array(repeating: -1, count: 28), quantities: Array(repeating: 0, count: 28))
     var equipment = RSProtocol.Container(kind: .equipment, ids: Array(repeating: -1, count: 14), quantities: Array(repeating: 0, count: 14))
     var itemIcons: [Int32: CGImage] = [:]
-    var backpackOpen = false
+    var backpackOpen = false {
+        didSet { if backpackOpen != oldValue { audio.ui(backpackOpen ? .open : .close) } }
+    }
     /// Side tab last opened from the left-hand menu.
     var selectedTab: GameTab?
     /// Local player model; hidden by default since the viewer stands inside it.
     var showLocalPlayer: Bool = UserDefaults.standard.object(forKey: "showLocalPlayer") as? Bool ?? false {
         didSet { UserDefaults.standard.set(showLocalPlayer, forKey: "showLocalPlayer") }
+    }
+    /// Room-scale: own pet walks after the headset instead of the in-game position.
+    var petFollowsMe: Bool = UserDefaults.standard.object(forKey: "petFollowsMe") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(petFollowsMe, forKey: "petFollowsMe") }
     }
     var handGestures: Bool = UserDefaults.standard.object(forKey: "handGestures") as? Bool ?? true {
         didSet { UserDefaults.standard.set(handGestures, forKey: "handGestures") }
@@ -81,10 +87,42 @@ final class AppModel {
     /// Worn models on the user's body (immersive space only).
     let rig = EquipmentRig()
 
+    // MARK: Audio
+    let audio = AudioSystem()
+    /// Music tab title from MUSIC; empty when the plugin sends none.
+    var nowPlaying = ""
+    var audioEnabled: Bool = UserDefaults.standard.object(forKey: "audioEnabled") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(audioEnabled, forKey: "audioEnabled"); syncAudio() }
+    }
+    var musicEnabled: Bool = UserDefaults.standard.object(forKey: "musicEnabled") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(musicEnabled, forKey: "musicEnabled"); syncAudio() }
+    }
+    var effectsEnabled: Bool = UserDefaults.standard.object(forKey: "effectsEnabled") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(effectsEnabled, forKey: "effectsEnabled"); syncAudio() }
+    }
+    var spatialAudio: Bool = UserDefaults.standard.object(forKey: "spatialAudio") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(spatialAudio, forKey: "spatialAudio"); syncAudio() }
+    }
+    var uiSounds: Bool = UserDefaults.standard.object(forKey: "uiSounds") as? Bool ?? true {
+        didSet { UserDefaults.standard.set(uiSounds, forKey: "uiSounds"); syncAudio() }
+    }
+    var musicVolume: Double = UserDefaults.standard.object(forKey: "musicVolume") as? Double ?? 0.5 {
+        didSet { UserDefaults.standard.set(musicVolume, forKey: "musicVolume"); syncAudio() }
+    }
+    var effectsVolume: Double = UserDefaults.standard.object(forKey: "effectsVolume") as? Double ?? 0.8 {
+        didSet { UserDefaults.standard.set(effectsVolume, forKey: "effectsVolume"); syncAudio() }
+    }
+
+    private func syncAudio() {
+        audio.settings = .init(master: audioEnabled, music: musicEnabled, effects: effectsEnabled, spatial: spatialAudio,
+                               ui: uiSounds, musicVolume: Float(musicVolume), effectsVolume: Float(effectsVolume))
+    }
+
     private var scenes: [WorldScene] = []
 
     init() {
         rig.showWeapon = showWeapon
+        syncAudio()
         client.onMessage = { [weak self] msg in self?.handle(msg) }
         browser.start()
         loadLaunchReplay()
@@ -93,6 +131,7 @@ final class AppModel {
     private func handle(_ msg: RSProtocol.Message) {
         if case .inputAck(let a) = msg {
             self.lastAck = a
+            if a.result != .ok { audio.ui(.deny) }
             if a.result == .noMenu { gameMenu = nil }
             return
         }
@@ -101,6 +140,12 @@ final class AppModel {
             if gameMenu == nil { menuAnchor = nil }
             return
         }
+        if case .sound(let snd) = msg {
+            // immersive scene first: it is the one around the viewer
+            audio.play(snd, scene: scenes.first(where: { $0.mode == .roomScale }) ?? scenes.last)
+            return
+        }
+        if case .music(let title) = msg { nowPlaying = title; audio.music(title: title); return }
         if case .uiFrame(let f) = msg { self.applyInterface(f); return }
         if case .container(let c) = msg {
             if c.kind == .inventory { self.inventory = c } else { self.equipment = c }
@@ -275,6 +320,7 @@ final class AppModel {
         let x = Int32((min(max(unit.x, 0), 0.9999) * canvasSize.width).rounded(.down))
         let y = Int32((min(max(unit.y, 0), 0.9999) * canvasSize.height).rounded(.down))
         clickSeq &+= 1
+        audio.ui(.tap)
         client.send(RSProtocol.encodeUIClick(seq: clickSeq, button: button, x: x, y: y))
     }
 
@@ -287,6 +333,7 @@ final class AppModel {
 
     /// One click on a side tab stone.
     func openTab(_ tab: GameTab) {
+        audio.ui(selectedTab == tab ? .close : .open)
         selectedTab = tab
         let p = tab.stone
         let saved = rightClickNext
