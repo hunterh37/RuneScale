@@ -251,6 +251,33 @@ class SceneCapture
 		seen.put(in.id, in);
 	}
 
+	/** Actors streamed per frame, nearest first. Beyond this crowds are dropped. */
+	static final int MAX_ACTORS = 128;
+	/** Nearest actors that get a new animation pose every frame; the rest every 4th frame. */
+	static final int FULL_RATE_ACTORS = 24;
+
+	private static final class Pose
+	{
+		long sig;
+		long meshId;
+	}
+
+	private static final class Candidate
+	{
+		final Actor a;
+		final int kind, key, dist;
+		final LocalPoint p;
+
+		Candidate(Actor a, int kind, int key, int dist, LocalPoint p)
+		{
+			this.a = a; this.kind = kind; this.key = key; this.dist = dist; this.p = p;
+		}
+	}
+
+	private final Map<Integer, Pose> poses = new HashMap<>();
+	private final List<Candidate> candidates = new ArrayList<>();
+	private int frameCount;
+
 	/** Per-frame actor transforms; sends transient meshes for new animation poses. */
 	void captureFrame(int radius, Consumer<byte[]> out)
 	{
@@ -267,38 +294,111 @@ class SceneCapture
 		f.cameraYaw = client.getCameraYaw() & 2047;
 		f.plane = wv.getPlane();
 		int maxDist = radius * Perspective.LOCAL_TILE_SIZE;
+		candidates.clear();
 		for (Player p : wv.players())
 		{
 			if (p == null) continue;
-			addActor(f, p, p == me ? Protocol.KIND_LOCAL : Protocol.KIND_PLAYER, p.getId(), lp, maxDist, wv, out);
+			addCandidate(p, p == me ? Protocol.KIND_LOCAL : Protocol.KIND_PLAYER, p.getId(), lp, maxDist, p == me);
 		}
 		for (NPC n : wv.npcs())
 		{
 			if (n == null) continue;
-			addActor(f, n, Protocol.KIND_NPC, 0x10000 | n.getIndex(), lp, maxDist, wv, out);
+			addCandidate(n, Protocol.KIND_NPC, 0x10000 | n.getIndex(), lp, maxDist, false);
 		}
+		candidates.sort((x, y) -> Integer.compare(x.dist, y.dist));
+		int n = Math.min(candidates.size(), MAX_ACTORS);
+		frameCount++;
+		Set<Integer> live = new HashSet<>(n * 2);
+		for (int i = 0; i < n; i++)
+		{
+			Candidate c = candidates.get(i);
+			boolean refresh = i < FULL_RATE_ACTORS || ((frameCount + c.key) & 3) == 0;
+			Protocol.Actor pa = actorFrame(c, refresh, wv, out);
+			if (pa == null) continue;
+			live.add(c.key);
+			f.actors.add(pa);
+		}
+		poses.keySet().retainAll(live);
+		candidates.clear();
 		out.accept(Protocol.frame(f));
 	}
 
-	private void addActor(Protocol.Frame f, Actor a, int kind, int key, LocalPoint center, int maxDist,
-		WorldView wv, Consumer<byte[]> out)
+	private void addCandidate(Actor a, int kind, int key, LocalPoint center, int maxDist, boolean self)
 	{
 		LocalPoint p = a.getLocalLocation();
-		if (p == null || p.distanceTo(center) > maxDist) return;
-		Model model = a.getModel();
-		if (model == null) return;
-		Protocol.Mesh m = modelMesh(model, Protocol.MESH_FLAG_TRANSIENT, textures);
-		if (m == null) return;
-		sendMesh(m, out);
+		if (p == null) return;
+		int d = p.distanceTo(center);
+		if (d > maxDist) return;
+		candidates.add(new Candidate(a, kind, key, self ? -1 : d, p));
+	}
+
+	private Protocol.Actor actorFrame(Candidate c, boolean refresh, WorldView wv, Consumer<byte[]> out)
+	{
+		Pose pose = poses.get(c.key);
+		long meshId;
+		if (!refresh && pose != null)
+		{
+			meshId = pose.meshId; // far actor: keep last pose, skip model read
+		}
+		else
+		{
+			Model model = c.a.getModel();
+			if (model == null) return null;
+			long sig = poseSignature(c.a, model);
+			if (pose != null && pose.sig == sig)
+			{
+				meshId = pose.meshId; // same pose as last frame: skip mesh build + hash
+			}
+			else
+			{
+				Protocol.Mesh m = modelMesh(model, Protocol.MESH_FLAG_TRANSIENT, textures);
+				if (m == null) return null;
+				sendMesh(m, out);
+				if (pose == null) { pose = new Pose(); poses.put(c.key, pose); }
+				pose.sig = sig;
+				pose.meshId = m.id;
+				meshId = m.id;
+			}
+		}
 		Protocol.Actor pa = new Protocol.Actor();
-		pa.key = key;
-		pa.kind = kind;
-		pa.x = p.getX();
-		pa.z = p.getY();
-		pa.y = Perspective.getTileHeight(client, p, wv.getPlane());
-		pa.orientation = a.getCurrentOrientation() & 2047;
-		pa.meshId = m.id;
-		f.actors.add(pa);
+		pa.key = c.key;
+		pa.kind = c.kind;
+		pa.x = c.p.getX();
+		pa.z = c.p.getY();
+		pa.y = Perspective.getTileHeight(client, c.p, wv.getPlane());
+		pa.orientation = c.a.getCurrentOrientation() & 2047;
+		pa.meshId = meshId;
+		return pa;
+	}
+
+	/** Cheap pose key: animation state, model size and a sparse vertex/color sample. */
+	static long poseSignature(Actor a, Model m)
+	{
+		long h = 0xcbf29ce484222325L;
+		h = (h ^ a.getAnimation()) * 0x100000001b3L;
+		h = (h ^ a.getAnimationFrame()) * 0x100000001b3L;
+		h = (h ^ a.getPoseAnimation()) * 0x100000001b3L;
+		h = (h ^ a.getPoseAnimationFrame()) * 0x100000001b3L;
+		return sampleHash(h, m);
+	}
+
+	static long sampleHash(long h, Model m)
+	{
+		int vc = m.getVerticesCount(), fc = m.getFaceCount();
+		h = (h ^ vc) * 0x100000001b3L;
+		h = (h ^ fc) * 0x100000001b3L;
+		float[] vx = m.getVerticesX(), vy = m.getVerticesY(), vz = m.getVerticesZ();
+		int vStep = Math.max(1, vc / 16);
+		for (int v = 0; v < vc; v += vStep)
+		{
+			h = (h ^ Float.floatToRawIntBits(vx[v])) * 0x100000001b3L;
+			h = (h ^ Float.floatToRawIntBits(vy[v])) * 0x100000001b3L;
+			h = (h ^ Float.floatToRawIntBits(vz[v])) * 0x100000001b3L;
+		}
+		int[] c1 = m.getFaceColors1();
+		int fStep = Math.max(1, fc / 16);
+		for (int i = 0; i < fc; i += fStep) h = (h ^ c1[i]) * 0x100000001b3L;
+		return h;
 	}
 
 	private void sendMesh(Protocol.Mesh m, Consumer<byte[]> out)
